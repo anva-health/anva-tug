@@ -1,117 +1,257 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>ANVA – Timed Up & Go</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <title>ANVA - Timed Up & Go</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-<style>
-  body {
-    font-family: Arial, sans-serif;
-    background: #f6f7f9;
-    text-align: center;
-    padding: 16px;
-  }
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f6f7f9;
+      text-align: center;
+      padding: 16px;
+    }
 
-  h1 { color: #0b5ed7; }
+    h1 { color: #0b5ed7; }
 
-  #cameraBox {
-    position: relative;
-    width: 100%;
-    max-width: 420px;
-    margin: auto;
-    display: none;
-  }
+    #cameraBox {
+      position: relative;
+      width: 100%;
+      max-width: 420px;
+      margin: auto;
+      display: none;
+    }
 
-  video {
-    width: 100%;
-    border-radius: 10px;
-  }
+    video {
+      width: 100%;
+      border-radius: 10px;
+    }
 
-  #overlay {
-    position: absolute;
-    top: 8%;
-    left: 10%;
-    width: 80%;
-    height: 80%;
-    border: 4px solid red;
-    border-radius: 12px;
-    pointer-events: none;
-  }
+    /* Green box overlay (same geometry used for recording crop) */
+    #overlay {
+      position: absolute;
+      top: 8%;
+      left: 10%;
+      width: 80%;
+      height: 80%;
+      border: 4px solid red;
+      border-radius: 12px;
+      pointer-events: none;
+      box-sizing: border-box;
+    }
 
-  #status {
-    margin-top: 10px;
-    font-size: 18px;
-    font-weight: bold;
-    color: red;
-  }
+    #status {
+      margin-top: 10px;
+      font-size: 18px;
+      font-weight: bold;
+      color: red;
+    }
 
-  button {
-    font-size: 18px;
-    padding: 14px 22px;
-    margin-top: 14px;
-    border-radius: 10px;
-    border: none;
-    background: #0b5ed7;
-    color: white;
-  }
+    button {
+      font-size: 18px;
+      padding: 14px 22px;
+      margin-top: 14px;
+      border-radius: 10px;
+      border: none;
+      background: #0b5ed7;
+      color: white;
+      cursor: pointer;
+    }
 
-  button.disabled {
-    opacity: 0.4;
-  }
-</style>
+    button.disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+  </style>
 </head>
 
 <body>
+  <h1>ANVA — Timed Up &amp; Go (TUG)</h1>
+  <p>Front view. Full body below neck. Feet visible.</p>
 
-<h1>ANVA – Timed Up & Go (TUG)</h1>
-<p>Front view. Full body below neck. Feet visible.</p>
+  <button id="startCameraBtn">Start Camera</button>
 
-<button id="startCameraBtn">Start Camera</button>
+  <div id="cameraBox">
+    <video id="video" autoplay playsinline></video>
+    <div id="overlay"></div>
 
-<div id="cameraBox">
-  <video id="video" autoplay playsinline></video>
-  <div id="overlay"></div>
-</div>
+    <!-- Hidden canvas: we record THIS (cropped + privacy band), not the raw camera -->
+    <canvas id="recCanvas" style="display:none;"></canvas>
+  </div>
 
-<div id="status">🔴 Adjust position</div>
+  <div id="status">🔴 Adjust position</div>
 
-<button id="recordBtn" class="disabled" disabled>Record TUG</button>
+  <button id="recordBtn" class="disabled" disabled>Record TUG</button>
 
-<script>
-const video = document.getElementById("video");
-const overlay = document.getElementById("overlay");
-const statusText = document.getElementById("status");
-const recordBtn = document.getElementById("recordBtn");
-const startBtn = document.getElementById("startCameraBtn");
-const cameraBox = document.getElementById("cameraBox");
+  <script>
+    const video = document.getElementById("video");
+    const overlay = document.getElementById("overlay");
+    const statusText = document.getElementById("status");
+    const recordBtn = document.getElementById("recordBtn");
+    const startBtn = document.getElementById("startCameraBtn");
+    const cameraBox = document.getElementById("cameraBox");
 
-startBtn.onclick = async () => {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "environment" }
+    // Hidden recording canvas
+    const recCanvas = document.getElementById("recCanvas");
+    const recCtx = recCanvas.getContext("2d");
+
+    let recorder = null;
+    let chunks = [];
+    let drawTimer = null;
+    let isRecording = false;
+
+    // Overlay crop settings (match CSS overlay)
+    const CROP_LEFT = 0.10;
+    const CROP_TOP  = 0.08;
+    const CROP_W    = 0.80;
+    const CROP_H    = 0.80;
+
+    // Privacy band INSIDE the recorded crop (black out top X% of recorded frames)
+    const PRIVACY_BAND = 0.28; // 28% of recorded height (tune later)
+
+    function pickMimeType() {
+      const candidates = [
+        "video/mp4;codecs=h264",
+        "video/webm;codecs=vp9",
+        "video/webm;codecs=vp8",
+        "video/webm",
+      ];
+      for (const t of candidates) {
+        if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) return t;
+      }
+      return "";
+    }
+
+    // Start camera
+    startBtn.onclick = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+          audio: false
+        });
+        video.srcObject = stream;
+        cameraBox.style.display = "block";
+        startBtn.style.display = "none";
+
+        // keep disabled until user confirms setup
+        overlay.style.borderColor = "red";
+        statusText.textContent = "🔴 Adjust position";
+        statusText.style.color = "red";
+        recordBtn.disabled = true;
+        recordBtn.classList.add("disabled");
+      } catch (e) {
+        alert("Camera permission is required.");
+      }
+    };
+
+    // Human setup confirmation (tap video to go green)
+    video.addEventListener("click", () => {
+      if (isRecording) return;
+      overlay.style.borderColor = "green";
+      statusText.textContent = "🟢 Setup OK — You may record";
+      statusText.style.color = "green";
+      recordBtn.disabled = false;
+      recordBtn.classList.remove("disabled");
     });
-    video.srcObject = stream;
-    cameraBox.style.display = "block";
-    startBtn.style.display = "none";
-  } catch (e) {
-    alert("Camera permission is required.");
-  }
-};
 
-// Human setup confirmation
-video.addEventListener("click", () => {
-  overlay.style.borderColor = "green";
-  statusText.textContent = "🟢 Setup OK – You may record";
-  statusText.style.color = "green";
-  recordBtn.disabled = false;
-  recordBtn.classList.remove("disabled");
-});
+    function startRecording() {
+      if (!video.srcObject) {
+        alert("Start camera first.");
+        return;
+      }
+      if (!video.videoWidth || !video.videoHeight) {
+        alert("Camera not ready yet. Try again in 1 second.");
+        return;
+      }
 
-recordBtn.onclick = () => {
-  alert("Recording logic comes next.");
-};
-</script>
+      const srcW = video.videoWidth;
+      const srcH = video.videoHeight;
 
+      // Compute crop in source pixels (matches overlay)
+      const sx = Math.floor(srcW * CROP_LEFT);
+      const sy = Math.floor(srcH * CROP_TOP);
+      const sw = Math.floor(srcW * CROP_W);
+      const sh = Math.floor(srcH * CROP_H);
+
+      // Recorded canvas size = cropped region
+      recCanvas.width = sw;
+      recCanvas.height = sh;
+
+      function drawFrame() {
+        // Draw crop
+        recCtx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
+
+        // Privacy band (always black out top band)
+        const bandH = Math.floor(sh * PRIVACY_BAND);
+        recCtx.fillStyle = "black";
+        recCtx.fillRect(0, 0, sw, bandH);
+      }
+
+      // Start drawing repeatedly
+      drawTimer = setInterval(drawFrame, 33); // ~30fps
+
+      // Record the canvas stream
+      const stream = recCanvas.captureStream(30);
+
+      const mimeType = pickMimeType();
+      const options = mimeType ? { mimeType } : undefined;
+
+      chunks = [];
+      recorder = new MediaRecorder(stream, options);
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunks.push(e.data);
+      };
+
+      recorder.onstop = () => {
+        clearInterval(drawTimer);
+        drawTimer = null;
+
+        const type = (recorder && recorder.mimeType) ? recorder.mimeType : "video/webm";
+        const blob = new Blob(chunks, { type });
+
+        // Download file to the phone
+        const a = document.createElement("a");
+        const ts = new Date().toISOString().replace(/[:.]/g, "-");
+        const ext = type.includes("mp4") ? "mp4" : "webm";
+        a.href = URL.createObjectURL(blob);
+        a.download = `ANVA_TUG_${ts}.${ext}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        statusText.textContent = "✅ Saved (downloaded). Upload to Drive.";
+        statusText.style.color = "green";
+
+        isRecording = false;
+        recordBtn.textContent = "Record TUG";
+      };
+
+      recorder.start();
+      isRecording = true;
+
+      statusText.textContent = "⏺ Recording... tap again to stop";
+      statusText.style.color = "red";
+      recordBtn.textContent = "Stop";
+    }
+
+    function stopRecording() {
+      if (recorder && recorder.state !== "inactive") {
+        recorder.stop();
+      }
+    }
+
+    // Record/Stop toggle
+    recordBtn.onclick = () => {
+      if (recordBtn.disabled) return;
+
+      if (!isRecording) {
+        startRecording();
+      } else {
+        stopRecording();
+      }
+    };
+  </script>
 </body>
 </html>
