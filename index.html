@@ -20,6 +20,7 @@
     width: 100%;
     max-width: 420px;
     margin: auto;
+    display: none;
   }
 
   video {
@@ -53,11 +54,10 @@
     border: none;
     background: #0b5ed7;
     color: white;
-    opacity: 0.4;
   }
 
-  button.enabled {
-    opacity: 1;
+  button.disabled {
+    opacity: 0.4;
   }
 </style>
 </head>
@@ -67,6 +67,8 @@
 <h1>ANVA – Timed Up & Go (TUG)</h1>
 <p>Front view. Full body below neck. Feet visible.</p>
 
+<button id="startCameraBtn">Start Camera</button>
+
 <div id="cameraBox">
   <video id="video" autoplay playsinline></video>
   <div id="overlay"></div>
@@ -74,32 +76,40 @@
 
 <div id="status">🔴 Adjust position</div>
 
-<button id="recordBtn" disabled>Record TUG</button>
+<button id="recordBtn" class="disabled" disabled>Record TUG</button>
 
 <script>
 const video = document.getElementById("video");
 const overlay = document.getElementById("overlay");
 const statusText = document.getElementById("status");
 const recordBtn = document.getElementById("recordBtn");
+const startBtn = document.getElementById("startCameraBtn");
+const cameraBox = document.getElementById("cameraBox");
 
-navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-  .then(stream => video.srcObject = stream)
-  .catch(() => alert("Camera access required"));
+startBtn.onclick = async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" }
+    });
+    video.srcObject = stream;
+    cameraBox.style.display = "block";
+    startBtn.style.display = "none";
+  } catch (e) {
+    alert("Camera permission is required.");
+  }
+};
 
-/*
-  TEMPORARY HUMAN GATE:
-  Tap the video to confirm setup is OK
-*/
+// Human setup confirmation
 video.addEventListener("click", () => {
   overlay.style.borderColor = "green";
   statusText.textContent = "🟢 Setup OK – You may record";
   statusText.style.color = "green";
   recordBtn.disabled = false;
-  recordBtn.classList.add("enabled");
+  recordBtn.classList.remove("disabled");
 });
 
 recordBtn.onclick = () => {
-  alert("Recording will be enabled in next step.");
+  alert("Recording logic comes next.");
 };
 </script>
 
