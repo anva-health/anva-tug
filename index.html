@@ -13,7 +13,8 @@
       padding: 16px;
     }
 
-    h1 { color: #0b5ed7; }
+    h1 { color: #0b5ed7; margin-bottom: 6px; }
+    p { margin-top: 0; }
 
     #cameraBox {
       position: relative;
@@ -26,6 +27,7 @@
     video {
       width: 100%;
       border-radius: 10px;
+      background: #000;
     }
 
     /* Green box overlay (same geometry used for recording crop) */
@@ -41,17 +43,43 @@
       box-sizing: border-box;
     }
 
+    /* Privacy line overlay (0.38 of RECORDED crop height, drawn visually inside overlay) */
+    #privacyLine {
+      position: absolute;
+      left: 10%;
+      width: 80%;
+      border-top: 3px dashed rgba(0,0,0,0.65);
+      pointer-events: none;
+      box-sizing: border-box;
+      display: none;
+    }
+
     #status {
       margin-top: 10px;
       font-size: 18px;
       font-weight: bold;
       color: red;
+      min-height: 24px;
+    }
+
+    #substatus {
+      margin-top: 6px;
+      font-size: 14px;
+      color: #444;
+      min-height: 18px;
+    }
+
+    .row {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 14px;
     }
 
     button {
       font-size: 18px;
       padding: 14px 22px;
-      margin-top: 14px;
       border-radius: 10px;
       border: none;
       background: #0b5ed7;
@@ -59,57 +87,214 @@
       cursor: pointer;
     }
 
+    button.secondary { background: #6c757d; }
     button.disabled {
       opacity: 0.4;
       cursor: not-allowed;
     }
+
+    /* Results panel */
+    #resultsPanel{
+      margin: 18px auto 0;
+      max-width: 520px;
+      background: white;
+      border-radius: 12px;
+      padding: 14px;
+      box-shadow: 0 1px 8px rgba(0,0,0,0.08);
+      display: none;
+      text-align: left;
+    }
+
+    #resultsPanel h2{ margin: 0 0 10px; font-size: 18px; }
+    .grid{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 14px;
+    }
+    .kv{ display:flex; justify-content:space-between; gap: 10px; }
+    .k{ color:#555; }
+    .v{ font-weight:700; }
+    .pill{
+      display:inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .pill.ok{ background:#d1e7dd; color:#0f5132; }
+    .pill.bad{ background:#f8d7da; color:#842029; }
+    #notes{ margin-top: 10px; color:#444; font-size: 13px; }
   </style>
 </head>
 
 <body>
   <h1>ANVA — Timed Up &amp; Go (TUG)</h1>
-  <p>Front view. Full body below neck. Feet visible.</p>
+  <p>Front view. Full body below neck. Feet visible. No face capture.</p>
 
-  <button id="startCameraBtn">Start Camera</button>
+  <div class="row">
+    <button id="startCameraBtn">Start Camera</button>
+    <button id="recordBtn" class="disabled" disabled>Record TUG</button>
+    <button id="resetBtn" class="secondary disabled" disabled>Reset</button>
+  </div>
 
   <div id="cameraBox">
-    <video id="video" autoplay playsinline></video>
+    <video id="video" autoplay playsinline muted></video>
     <div id="overlay"></div>
+    <div id="privacyLine"></div>
 
     <!-- Hidden canvas: we record THIS (cropped + privacy band), not the raw camera -->
     <canvas id="recCanvas" style="display:none;"></canvas>
+
+    <!-- Hidden analysis canvas for motion (small) -->
+    <canvas id="motionCanvas" style="display:none;"></canvas>
   </div>
 
-  <div id="status">🔴 Adjust position</div>
+  <div id="status">🔴 Start camera</div>
+  <div id="substatus"></div>
 
-  <button id="recordBtn" class="disabled" disabled>Record TUG</button>
+  <div class="row">
+    <button id="uploadResultsBtn" class="secondary">Upload Results JSON</button>
+    <input id="resultsFile" type="file" accept="application/json" style="display:none;" />
+  </div>
+
+  <div id="resultsPanel">
+    <h2>Session Results <span id="validPill" class="pill ok">VALID</span></h2>
+    <div class="grid" id="resultsGrid"></div>
+    <div id="notes"></div>
+  </div>
 
   <script>
-    const video = document.getElementById("video");
-    const overlay = document.getElementById("overlay");
-    const statusText = document.getElementById("status");
-    const recordBtn = document.getElementById("recordBtn");
-    const startBtn = document.getElementById("startCameraBtn");
-    const cameraBox = document.getElementById("cameraBox");
-
-    // Hidden recording canvas
-    const recCanvas = document.getElementById("recCanvas");
-    const recCtx = recCanvas.getContext("2d");
-
-    let recorder = null;
-    let chunks = [];
-    let drawTimer = null;
-    let isRecording = false;
-
-    // Overlay crop settings (match CSS overlay)
+    // =========================
+    // Locked constants
+    // =========================
     const CROP_LEFT = 0.10;
     const CROP_TOP  = 0.08;
     const CROP_W    = 0.80;
     const CROP_H    = 0.80;
 
-    // Privacy band INSIDE the recorded crop (black out top X% of recorded frames)
-    const PRIVACY_BAND = 0.28; // 28% of recorded height (tune later)
+    // ✅ LOCKED privacy
+    const PRIVACY_BAND = 0.38; // 38% of RECORDED crop height is blacked out
 
+    // ✅ LOCKED stillness
+    const STILLNESS_SECONDS = 1.0;
+
+    // Motion thresholds (video-based stillness detector)
+    // Keep conservative so we don't accidentally pass motion
+    const MOTION_SAMPLE_W = 96;
+    const MOTION_SAMPLE_H = 96;
+    const MOTION_THRESHOLD = 10.5; // average pixel diff threshold
+    const MOTION_REQUIRED_CONSEC = 8; // consecutive frames under threshold (in addition to time)
+
+    // Lean-check behavior (pre-record)
+    const LEAN_HOLD_MS = 500; // must remain stable-ish for this long while in lean state
+
+    // =========================
+    // DOM
+    // =========================
+    const video = document.getElementById("video");
+    const overlay = document.getElementById("overlay");
+    const privacyLine = document.getElementById("privacyLine");
+    const statusText = document.getElementById("status");
+    const substatus = document.getElementById("substatus");
+    const recordBtn = document.getElementById("recordBtn");
+    const startBtn = document.getElementById("startCameraBtn");
+    const resetBtn = document.getElementById("resetBtn");
+    const cameraBox = document.getElementById("cameraBox");
+
+    const recCanvas = document.getElementById("recCanvas");
+    const recCtx = recCanvas.getContext("2d");
+
+    const motionCanvas = document.getElementById("motionCanvas");
+    const motionCtx = motionCanvas.getContext("2d", { willReadFrequently: true });
+
+    const uploadBtn = document.getElementById("uploadResultsBtn");
+    const resultsFile = document.getElementById("resultsFile");
+    const resultsPanel = document.getElementById("resultsPanel");
+    const resultsGrid = document.getElementById("resultsGrid");
+    const validPill = document.getElementById("validPill");
+    const notesEl = document.getElementById("notes");
+
+    // =========================
+    // Recorder
+    // =========================
+    let recorder = null;
+    let chunks = [];
+    let drawTimer = null;
+    let isRecording = false;
+
+    // =========================
+    // State machine (LOCKED)
+    // =========================
+    const State = Object.freeze({
+      SETUP: "SETUP",
+      LEAN_CHECK: "LEAN_CHECK",
+      READY_GREEN: "READY_GREEN",
+      RECORD_STILL: "RECORD_STILL",
+      ACTIVE_TUG: "ACTIVE_TUG",
+      END_STILL: "END_STILL",
+      DONE: "DONE",
+      ABORTED: "ABORTED"
+    });
+
+    let state = State.SETUP;
+
+    // Timing
+    let recordStartTs = null;
+    let stillStartTs = null;
+    let leanStartTs = null;
+
+    // Motion detection
+    motionCanvas.width = MOTION_SAMPLE_W;
+    motionCanvas.height = MOTION_SAMPLE_H;
+    let prevFrame = null;
+    let consecStill = 0;
+
+    // Cropping cached per stream
+    let sx=0, sy=0, sw=0, sh=0;
+    let srcW=0, srcH=0;
+
+    function setUI({borderColor="red", status="", statusColor="red", hint="" , recordEnabled=false, resetEnabled=false, showPrivacy=true}) {
+      overlay.style.borderColor = borderColor;
+      statusText.textContent = status;
+      statusText.style.color = statusColor;
+      substatus.textContent = hint;
+
+      recordBtn.disabled = !recordEnabled;
+      recordBtn.classList.toggle("disabled", !recordEnabled);
+
+      resetBtn.disabled = !resetEnabled;
+      resetBtn.classList.toggle("disabled", !resetEnabled);
+
+      privacyLine.style.display = showPrivacy ? "block" : "none";
+    }
+
+    function gotoState(next) {
+      state = next;
+      // reset per-state timers/counters
+      if (next === State.SETUP) {
+        leanStartTs = null;
+        recordStartTs = null;
+        stillStartTs = null;
+        consecStill = 0;
+      }
+      if (next === State.LEAN_CHECK) {
+        leanStartTs = performance.now();
+        consecStill = 0;
+      }
+      if (next === State.RECORD_STILL) {
+        recordStartTs = performance.now();
+        stillStartTs = performance.now();
+        consecStill = 0;
+      }
+      if (next === State.END_STILL) {
+        stillStartTs = performance.now();
+        consecStill = 0;
+      }
+    }
+
+    // =========================
+    // MediaRecorder MIME selection
+    // =========================
     function pickMimeType() {
       const candidates = [
         "video/mp4;codecs=h264",
@@ -123,73 +308,106 @@
       return "";
     }
 
-    // Start camera
-    startBtn.onclick = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
-          audio: false
-        });
-        video.srcObject = stream;
-        cameraBox.style.display = "block";
-        startBtn.style.display = "none";
+    // =========================
+    // Motion / stillness detector
+    // =========================
+    function motionScore() {
+      // sample the CURRENT VIDEO frame into a small canvas
+      motionCtx.drawImage(video, 0, 0, MOTION_SAMPLE_W, MOTION_SAMPLE_H);
+      const img = motionCtx.getImageData(0, 0, MOTION_SAMPLE_W, MOTION_SAMPLE_H);
+      const d = img.data;
 
-        // keep disabled until user confirms setup
-        overlay.style.borderColor = "red";
-        statusText.textContent = "🔴 Adjust position";
-        statusText.style.color = "red";
-        recordBtn.disabled = true;
-        recordBtn.classList.add("disabled");
-      } catch (e) {
-        alert("Camera permission is required.");
-      }
-    };
-
-    // Human setup confirmation (tap video to go green)
-    video.addEventListener("click", () => {
-      if (isRecording) return;
-      overlay.style.borderColor = "green";
-      statusText.textContent = "🟢 Setup OK — You may record";
-      statusText.style.color = "green";
-      recordBtn.disabled = false;
-      recordBtn.classList.remove("disabled");
-    });
-
-    function startRecording() {
-      if (!video.srcObject) {
-        alert("Start camera first.");
-        return;
-      }
-      if (!video.videoWidth || !video.videoHeight) {
-        alert("Camera not ready yet. Try again in 1 second.");
-        return;
+      if (!prevFrame) {
+        prevFrame = new Uint8ClampedArray(d);
+        return 999;
       }
 
-      const srcW = video.videoWidth;
-      const srcH = video.videoHeight;
+      // Average absolute diff over RGB channels
+      let sum = 0;
+      const step = 4; // RGBA
+      for (let i = 0; i < d.length; i += step) {
+        sum += Math.abs(d[i] - prevFrame[i]);     // R
+        sum += Math.abs(d[i+1] - prevFrame[i+1]); // G
+        sum += Math.abs(d[i+2] - prevFrame[i+2]); // B
+      }
+      prevFrame = new Uint8ClampedArray(d);
+      const avg = sum / (MOTION_SAMPLE_W * MOTION_SAMPLE_H * 3);
+      return avg;
+    }
 
-      // Compute crop in source pixels (matches overlay)
-      const sx = Math.floor(srcW * CROP_LEFT);
-      const sy = Math.floor(srcH * CROP_TOP);
-      const sw = Math.floor(srcW * CROP_W);
-      const sh = Math.floor(srcH * CROP_H);
+    function stillnessPassed() {
+      const now = performance.now();
+      const elapsed = (now - stillStartTs) / 1000.0;
 
-      // Recorded canvas size = cropped region
+      const m = motionScore();
+      if (m < MOTION_THRESHOLD) consecStill++;
+      else consecStill = 0;
+
+      const timeOK = elapsed >= STILLNESS_SECONDS;
+      const framesOK = consecStill >= MOTION_REQUIRED_CONSEC;
+
+      return timeOK && framesOK;
+    }
+
+    // =========================
+    // Privacy line placement (visual only)
+    // It marks 0.38 of the RECORDED CROP height within the overlay region.
+    // =========================
+    function updatePrivacyLinePosition() {
+      // overlay is placed at top 8%, height 80% of camera box
+      // privacy line is within that overlay: top of overlay + (PRIVACY_BAND * overlayHeight)
+      const box = cameraBox.getBoundingClientRect();
+      const ov = overlay.getBoundingClientRect();
+
+      const y = (ov.top - box.top) + (ov.height * PRIVACY_BAND);
+      privacyLine.style.top = `${y}px`;
+      privacyLine.style.left = `10%`;
+      privacyLine.style.width = `80%`;
+    }
+
+    // =========================
+    // Drawing pipeline (recorded canvas is cropped + privacy band)
+    // =========================
+    function computeCropIfReady() {
+      if (!video.videoWidth || !video.videoHeight) return false;
+      srcW = video.videoWidth;
+      srcH = video.videoHeight;
+
+      sx = Math.floor(srcW * CROP_LEFT);
+      sy = Math.floor(srcH * CROP_TOP);
+      sw = Math.floor(srcW * CROP_W);
+      sh = Math.floor(srcH * CROP_H);
+
       recCanvas.width = sw;
       recCanvas.height = sh;
+      return true;
+    }
 
-      function drawFrame() {
-        // Draw crop
-        recCtx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
+    function drawRecordedFrame() {
+      // Draw crop
+      recCtx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
 
-        // Privacy band (always black out top band)
-        const bandH = Math.floor(sh * PRIVACY_BAND);
-        recCtx.fillStyle = "black";
-        recCtx.fillRect(0, 0, sw, bandH);
+      // Privacy band (black out top 38% of recorded crop)
+      const bandH = Math.floor(sh * PRIVACY_BAND);
+      recCtx.fillStyle = "black";
+      recCtx.fillRect(0, 0, sw, bandH);
+    }
+
+    // =========================
+    // Start/Stop recording
+    // =========================
+    function startRecordingCanvas() {
+      if (!video.srcObject) {
+        alert("Start camera first.");
+        return false;
+      }
+      if (!computeCropIfReady()) {
+        alert("Camera not ready yet. Try again in 1 second.");
+        return false;
       }
 
-      // Start drawing repeatedly
-      drawTimer = setInterval(drawFrame, 33); // ~30fps
+      // Start drawing ~30fps
+      drawTimer = setInterval(drawRecordedFrame, 33);
 
       // Record the canvas stream
       const stream = recCanvas.captureStream(30);
@@ -211,7 +429,7 @@
         const type = (recorder && recorder.mimeType) ? recorder.mimeType : "video/webm";
         const blob = new Blob(chunks, { type });
 
-        // Download file to the phone
+        // Download
         const a = document.createElement("a");
         const ts = new Date().toISOString().replace(/[:.]/g, "-");
         const ext = type.includes("mp4") ? "mp4" : "webm";
@@ -221,37 +439,310 @@
         a.click();
         a.remove();
 
-        statusText.textContent = "✅ Saved (downloaded). Upload to Drive.";
-        statusText.style.color = "green";
-
         isRecording = false;
         recordBtn.textContent = "Record TUG";
       };
 
       recorder.start();
       isRecording = true;
-
-      statusText.textContent = "⏺ Recording... tap again to stop";
-      statusText.style.color = "red";
       recordBtn.textContent = "Stop";
+      return true;
     }
 
-    function stopRecording() {
-      if (recorder && recorder.state !== "inactive") {
-        recorder.stop();
+    function stopRecordingCanvas() {
+      if (recorder && recorder.state !== "inactive") recorder.stop();
+    }
+
+    // =========================
+    // ABORT handling
+    // =========================
+    function abortFlow(reason) {
+      // Stop recording if needed
+      if (isRecording) stopRecordingCanvas();
+      gotoState(State.ABORTED);
+      setUI({
+        borderColor: "red",
+        status: "⛔ Reset required",
+        statusColor: "red",
+        hint: reason,
+        recordEnabled: false,
+        resetEnabled: true,
+        showPrivacy: true
+      });
+    }
+
+    // =========================
+    // Main loop: drives instructions and gating
+    // =========================
+    let loopHandle = null;
+
+    function mainLoop() {
+      if (!video.srcObject) return;
+
+      updatePrivacyLinePosition();
+
+      // If we don't have a previous frame, prime motion detector
+      motionScore();
+
+      if (state === State.SETUP) {
+        // Instruction: adjust framing, then lean forward
+        setUI({
+          borderColor: "red",
+          status: "🔴 Adjust position",
+          statusColor: "red",
+          hint: "Sit normally. Make sure feet + blue tape are visible. Head must NOT be visible.",
+          recordEnabled: false,
+          resetEnabled: true,
+          showPrivacy: true
+        });
+        // Move automatically to LEAN_CHECK after camera is stable-ish for a moment
+        // We use motion as proxy: if mostly still, we can proceed
+        const m = motionScore();
+        if (m < MOTION_THRESHOLD) {
+          if (!leanStartTs) leanStartTs = performance.now();
+          const held = performance.now() - leanStartTs;
+          if (held > 300) gotoState(State.LEAN_CHECK);
+        } else {
+          leanStartTs = null;
+        }
       }
+
+      else if (state === State.LEAN_CHECK) {
+        setUI({
+          borderColor: "red",
+          status: "🔴 Lean check",
+          statusColor: "red",
+          hint: "Lean forward slightly as if you are about to stand — keep head out of view.",
+          recordEnabled: false,
+          resetEnabled: true,
+          showPrivacy: true
+        });
+
+        // We can't detect head without pose yet; today we enforce via privacy band + user framing
+        // Lean check = require stable motion while user holds the lean for 0.5s
+        const m = motionScore();
+        if (m < MOTION_THRESHOLD) {
+          if (!leanStartTs) leanStartTs = performance.now();
+          const held = performance.now() - leanStartTs;
+          if (held >= LEAN_HOLD_MS) gotoState(State.READY_GREEN);
+        } else {
+          leanStartTs = null;
+        }
+      }
+
+      else if (state === State.READY_GREEN) {
+        setUI({
+          borderColor: "green",
+          status: "🟢 Setup OK — Press Record",
+          statusColor: "green",
+          hint: "After pressing Record: remain still for 1 second.",
+          recordEnabled: true,
+          resetEnabled: true,
+          showPrivacy: true
+        });
+      }
+
+      else if (state === State.RECORD_STILL) {
+        setUI({
+          borderColor: "green",
+          status: "⏱ Stillness required",
+          statusColor: "green",
+          hint: "Remain still for 1 second. Do not stand yet.",
+          recordEnabled: true, // button shows Stop
+          resetEnabled: true,
+          showPrivacy: true
+        });
+
+        if (stillnessPassed()) {
+          gotoState(State.ACTIVE_TUG);
+        }
+      }
+
+      else if (state === State.ACTIVE_TUG) {
+        setUI({
+          borderColor: "green",
+          status: "▶️ Stand up and walk",
+          statusColor: "green",
+          hint: "Complete TUG. Tap Stop when finished sitting. Then hold still 1 second.",
+          recordEnabled: true,
+          resetEnabled: true,
+          showPrivacy: true
+        });
+      }
+
+      else if (state === State.END_STILL) {
+        setUI({
+          borderColor: "green",
+          status: "⏱ End stillness",
+          statusColor: "green",
+          hint: "Hold still for 1 second to finish cleanly.",
+          recordEnabled: true,
+          resetEnabled: true,
+          showPrivacy: true
+        });
+
+        if (stillnessPassed()) {
+          gotoState(State.DONE);
+          stopRecordingCanvas();
+          setUI({
+            borderColor: "green",
+            status: "✅ Saved (downloaded). Upload video to Drive → run Colab → upload results JSON here.",
+            statusColor: "green",
+            hint: "",
+            recordEnabled: false,
+            resetEnabled: true,
+            showPrivacy: true
+          });
+        }
+      }
+
+      loopHandle = requestAnimationFrame(mainLoop);
     }
 
-    // Record/Stop toggle
+    // =========================
+    // Camera start
+    // =========================
+    startBtn.onclick = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+          audio: false
+        });
+
+        video.srcObject = stream;
+        cameraBox.style.display = "block";
+        startBtn.style.display = "none";
+        privacyLine.style.display = "block";
+
+        // Reset state
+        prevFrame = null;
+        gotoState(State.SETUP);
+
+        // Enable reset once camera is on
+        resetBtn.disabled = false;
+        resetBtn.classList.remove("disabled");
+
+        // Start loop
+        if (loopHandle) cancelAnimationFrame(loopHandle);
+        loopHandle = requestAnimationFrame(mainLoop);
+
+        // Slight delay to let layout settle, then place privacy line
+        setTimeout(updatePrivacyLinePosition, 200);
+
+      } catch (e) {
+        alert("Camera permission is required.");
+      }
+    };
+
+    // =========================
+    // Record button behavior (LOCKED)
+    // =========================
     recordBtn.onclick = () => {
       if (recordBtn.disabled) return;
 
+      // If not recording yet, only allow starting from READY_GREEN
       if (!isRecording) {
-        startRecording();
-      } else {
-        stopRecording();
+        if (state !== State.READY_GREEN) {
+          abortFlow("Record is only allowed after Green Setup.");
+          return;
+        }
+        const ok = startRecordingCanvas();
+        if (!ok) return;
+        // Immediately transition to RECORD_STILL (1 second stillness required)
+        gotoState(State.RECORD_STILL);
+        return;
+      }
+
+      // If recording, Stop means: go to END_STILL requirement
+      // (You should tap stop only after final sit)
+      if (state === State.ACTIVE_TUG) {
+        gotoState(State.END_STILL);
+        stillStartTs = performance.now();
+        consecStill = 0;
+        return;
+      }
+
+      // If in RECORD_STILL or END_STILL and user taps Stop, treat as abort
+      abortFlow("Stopped during required stillness. Reset and retry.");
+    };
+
+    // =========================
+    // Reset
+    // =========================
+    resetBtn.onclick = () => {
+      // Stop recording if needed
+      if (isRecording) stopRecordingCanvas();
+      prevFrame = null;
+      gotoState(State.SETUP);
+      setUI({
+        borderColor: "red",
+        status: "🔴 Adjust position",
+        statusColor: "red",
+        hint: "Sit normally. Make sure feet + blue tape are visible. Head must NOT be visible.",
+        recordEnabled: false,
+        resetEnabled: true,
+        showPrivacy: true
+      });
+    };
+
+    // =========================
+    // Results JSON upload & render (Objective 2)
+    // =========================
+    uploadBtn.onclick = () => resultsFile.click();
+
+    resultsFile.onchange = async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+
+      try {
+        const txt = await file.text();
+        const data = JSON.parse(txt);
+
+        // Render
+        resultsGrid.innerHTML = "";
+
+        function addRow(label, value) {
+          const wrap = document.createElement("div");
+          wrap.className = "kv";
+          const k = document.createElement("div"); k.className = "k"; k.textContent = label;
+          const v = document.createElement("div"); v.className = "v"; v.textContent = value;
+          wrap.appendChild(k); wrap.appendChild(v);
+          resultsGrid.appendChild(wrap);
+        }
+
+        const valid = (data.valid === true);
+        validPill.textContent = valid ? "VALID" : "REPEAT";
+        validPill.className = valid ? "pill ok" : "pill bad";
+
+        // Preferred fields (safe if missing)
+        addRow("TUG Total (s)", fmt(data.tug_total_s));
+        addRow("Sit→Stand (s)", fmt(data.sit_to_stand_s));
+        addRow("Walk Out (s)", fmt(data.walk_out_s));
+        addRow("Turn (s)", fmt(data.turn_s));
+        addRow("Walk Back (s)", fmt(data.walk_back_s));
+        addRow("Stand→Sit (s)", fmt(data.stand_to_sit_s));
+        addRow("ML Sway", fmt(data.sway_ml));
+        addRow("Turn Stability", fmt(data.turn_stability_index));
+        addRow("Composite (0–100)", fmt(data.tug_composite_0_100));
+
+        notesEl.textContent = data.notes ? `Notes: ${data.notes}` : "";
+
+        resultsPanel.style.display = "block";
+        resultsFile.value = ""; // reset input
+      } catch (err) {
+        alert("That file did not look like valid JSON results.");
       }
     };
+
+    function fmt(x) {
+      if (x === null || x === undefined || Number.isNaN(x)) return "—";
+      if (typeof x === "number") {
+        // show 2 decimals for times/metrics, integer for composite if already int-ish
+        if (Math.abs(x) >= 100 || Number.isInteger(x)) return String(x);
+        return x.toFixed(2);
+      }
+      return String(x);
+    }
   </script>
 </body>
 </html>
