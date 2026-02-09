@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>ANVA — TUG (Privacy-Safe)</title>
+  <title>ANVA — TUG (Pose Only, Privacy Safe)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <!-- TensorFlow + MoveNet -->
@@ -18,6 +18,7 @@
       padding: 16px;
     }
     h1 { color: #0b5ed7; }
+
     .card {
       max-width: 460px;
       margin: auto;
@@ -26,6 +27,7 @@
       border-radius: 12px;
       box-shadow: 0 6px 18px rgba(0,0,0,0.08);
     }
+
     button {
       padding: 10px 14px;
       margin: 6px;
@@ -38,23 +40,42 @@
     #recordBtn { background:#198754; color:white; }
     #stopBtn { background:#dc3545; color:white; }
     button:disabled { opacity:0.4; cursor:not-allowed; }
+
     #status { margin-top:10px; font-weight:700; }
-    video { display:none; }     /* raw camera NEVER shown */
-    canvas { width:100%; margin-top:10px; background:#000; border-radius:10px; }
+
+    /* IMPORTANT: video must exist but be invisible (NOT display:none) */
+    video {
+      position: absolute;
+      top: -10000px;
+      left: -10000px;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+    }
+
+    canvas {
+      width:100%;
+      margin-top:10px;
+      background:#000;
+      border-radius:10px;
+    }
   </style>
 </head>
 
 <body>
-<h1>ANVA — Timed Up & Go</h1>
+<h1>ANVA — TUG (Pose Only)</h1>
 
 <div class="card">
-  <p><b>Privacy mode:</b> camera used only for live pose extraction.<br>
-     <b>No video or images are ever saved.</b></p>
+  <p>
+    <b>Privacy mode:</b><br>
+    Camera is used only to extract pose.<br>
+    <b>No video or images are ever saved.</b>
+  </p>
 
-  <!-- Raw camera feed (hidden, never recorded) -->
+  <!-- Raw camera feed (hidden but alive for Safari) -->
   <video id="video" autoplay playsinline muted></video>
 
-  <!-- Optional skeleton preview (points only) -->
+  <!-- Skeleton preview (optional, points only) -->
   <canvas id="canvas"></canvas>
 
   <div>
@@ -81,10 +102,10 @@ let stream = null;
 let recording = false;
 let frameIndex = 0;
 
-// THIS is the only thing we save
+/* THIS is the ONLY data that gets saved */
 let poseFrames = [];
 
-// ---------------- Load MoveNet ----------------
+/* ---------- Load MoveNet AFTER video is live ---------- */
 async function loadDetector() {
   await tf.ready();
   detector = await poseDetection.createDetector(
@@ -93,24 +114,41 @@ async function loadDetector() {
   );
 }
 
-// ---------------- Start Camera ----------------
+/* ---------- Start Camera ---------- */
 startBtn.onclick = async () => {
-  statusEl.textContent = "Starting camera…";
-  stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:false });
+  statusEl.textContent = "Requesting camera…";
+
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: "user" },
+    audio: false
+  });
+
   video.srcObject = stream;
+
+  /* IMPORTANT: wait for real video frames */
   await video.play();
+
+  await new Promise(resolve => {
+    const check = () => {
+      if (video.videoWidth > 0 && video.videoHeight > 0) resolve();
+      else requestAnimationFrame(check);
+    };
+    check();
+  });
 
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
 
+  statusEl.textContent = "Loading pose model…";
   await loadDetector();
+
   statusEl.textContent = "Camera ready. Press Start TUG.";
   recordBtn.disabled = false;
 
   requestAnimationFrame(loop);
 };
 
-// ---------------- Main Loop ----------------
+/* ---------- Main Loop ---------- */
 async function loop() {
   if (!video.videoWidth) return requestAnimationFrame(loop);
 
@@ -136,19 +174,19 @@ async function loop() {
   requestAnimationFrame(loop);
 }
 
-// ---------------- Skeleton Preview (optional) ----------------
+/* ---------- Skeleton Preview ---------- */
 function drawSkeleton(kps) {
   ctx.fillStyle = "white";
   for (let k of kps) {
     if (k.score > 0.4) {
       ctx.beginPath();
-      ctx.arc(k.x, k.y, 4, 0, Math.PI*2);
+      ctx.arc(k.x, k.y, 4, 0, Math.PI * 2);
       ctx.fill();
     }
   }
 }
 
-// ---------------- Controls ----------------
+/* ---------- Controls ---------- */
 recordBtn.onclick = () => {
   poseFrames = [];
   frameIndex = 0;
