@@ -5,7 +5,7 @@
   <title>ANVA — TUG (Pose Only, Privacy Safe)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <!-- TensorFlow + MoveNet -->
+  <!-- TFJS + MoveNet -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.9.0/dist/tf-core.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.9.0/dist/tf-backend-webgl.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@0.0.8/dist/pose-detection.min.js"></script>
@@ -17,40 +17,42 @@
       text-align: center;
       padding: 16px;
     }
-    h1 { color: #0b5ed7; }
+    h1 { color:#0b5ed7; }
 
     .card {
-      max-width: 460px;
-      margin: auto;
-      background: white;
-      padding: 16px;
-      border-radius: 12px;
-      box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+      max-width:460px;
+      margin:auto;
+      background:#fff;
+      padding:16px;
+      border-radius:12px;
+      box-shadow:0 6px 18px rgba(0,0,0,0.08);
     }
 
     button {
-      padding: 10px 14px;
-      margin: 6px;
-      border-radius: 8px;
-      border: none;
-      font-weight: 700;
-      cursor: pointer;
+      padding:10px 14px;
+      margin:6px;
+      border-radius:8px;
+      border:none;
+      font-weight:700;
+      cursor:pointer;
     }
-    #startBtn { background:#0b5ed7; color:white; }
-    #recordBtn { background:#198754; color:white; }
-    #stopBtn { background:#dc3545; color:white; }
+    #startBtn { background:#0b5ed7; color:#fff; }
+    #recordBtn { background:#198754; color:#fff; }
+    #stopBtn { background:#dc3545; color:#fff; }
     button:disabled { opacity:0.4; cursor:not-allowed; }
 
     #status { margin-top:10px; font-weight:700; }
 
-    /* IMPORTANT: video must exist but be invisible (NOT display:none) */
+    /* CRITICAL FOR iOS SAFARI */
     video {
-      position: absolute;
-      top: -10000px;
-      left: -10000px;
-      width: 1px;
-      height: 1px;
-      opacity: 0;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 2px;
+      height: 2px;
+      opacity: 0.01;           /* must NOT be 0 */
+      pointer-events: none;
+      z-index: -1;
     }
 
     canvas {
@@ -63,19 +65,16 @@
 </head>
 
 <body>
-<h1>ANVA — TUG (Pose Only)</h1>
+<h1>ANVA — Timed Up & Go</h1>
 
 <div class="card">
   <p>
     <b>Privacy mode:</b><br>
-    Camera is used only to extract pose.<br>
+    Camera used only for live pose extraction.<br>
     <b>No video or images are ever saved.</b>
   </p>
 
-  <!-- Raw camera feed (hidden but alive for Safari) -->
   <video id="video" autoplay playsinline muted></video>
-
-  <!-- Skeleton preview (optional, points only) -->
   <canvas id="canvas"></canvas>
 
   <div>
@@ -88,81 +87,106 @@
 </div>
 
 <script>
-let video = document.getElementById("video");
-let canvas = document.getElementById("canvas");
-let ctx = canvas.getContext("2d");
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
 
-let startBtn = document.getElementById("startBtn");
-let recordBtn = document.getElementById("recordBtn");
-let stopBtn = document.getElementById("stopBtn");
-let statusEl = document.getElementById("status");
+const startBtn = document.getElementById("startBtn");
+const recordBtn = document.getElementById("recordBtn");
+const stopBtn = document.getElementById("stopBtn");
+const statusEl = document.getElementById("status");
 
 let detector = null;
-let stream = null;
 let recording = false;
 let frameIndex = 0;
-
-/* THIS is the ONLY data that gets saved */
 let poseFrames = [];
 
-/* ---------- Load MoveNet AFTER video is live ---------- */
-async function loadDetector() {
-  await tf.ready();
-  detector = await poseDetection.createDetector(
-    poseDetection.SupportedModels.MoveNet,
-    { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
-  );
-}
+function setStatus(t) { statusEl.textContent = t; }
 
-/* ---------- Start Camera ---------- */
-startBtn.onclick = async () => {
-  statusEl.textContent = "Requesting camera…";
+/* ---- Wait until Safari actually delivers frames ---- */
+function waitForVideo(timeoutMs = 5000) {
+  return new Promise((resolve, reject) => {
+    const start = Date.now();
 
-  stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: "user" },
-    audio: false
-  });
+    function check() {
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        resolve();
+        return;
+      }
+      if (Date.now() - start > timeoutMs) {
+        reject("Video never started");
+        return;
+      }
+      requestAnimationFrame(check);
+    }
 
-  video.srcObject = stream;
-
-  /* IMPORTANT: wait for real video frames */
-  await video.play();
-
-  await new Promise(resolve => {
-    const check = () => {
-      if (video.videoWidth > 0 && video.videoHeight > 0) resolve();
-      else requestAnimationFrame(check);
-    };
+    video.addEventListener("loadeddata", check, { once:true });
     check();
   });
+}
 
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
+/* ---- Start Camera ---- */
+startBtn.onclick = async () => {
+  try {
+    setStatus("Requesting camera…");
 
-  statusEl.textContent = "Loading pose model…";
-  await loadDetector();
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "user" },
+      audio: false
+    });
 
-  statusEl.textContent = "Camera ready. Press Start TUG.";
-  recordBtn.disabled = false;
+    video.srcObject = stream;
+    await video.play();
 
-  requestAnimationFrame(loop);
+    setStatus("Starting video…");
+    await waitForVideo();
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    setStatus("Loading pose model…");
+    await tf.ready();
+    detector = await poseDetection.createDetector(
+      poseDetection.SupportedModels.MoveNet,
+      { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
+    );
+
+    recordBtn.disabled = false;
+    setStatus("Camera ready. Press Start TUG.");
+
+    requestAnimationFrame(loop);
+
+  } catch (e) {
+    console.error(e);
+    setStatus("Camera failed. Reload page.");
+  }
 };
 
-/* ---------- Main Loop ---------- */
+/* ---- Main Loop ---- */
 async function loop() {
-  if (!video.videoWidth) return requestAnimationFrame(loop);
+  if (!detector) return requestAnimationFrame(loop);
 
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
   const poses = await detector.estimatePoses(video, { maxPoses:1 });
-  if (poses.length > 0) {
-    drawSkeleton(poses[0].keypoints);
+  if (poses.length) {
+    const kps = poses[0].keypoints;
+
+    // draw points (preview only)
+    ctx.fillStyle = "white";
+    for (const k of kps) {
+      if (k.score > 0.4) {
+        ctx.beginPath();
+        ctx.arc(k.x, k.y, 4, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
 
     if (recording) {
       poseFrames.push({
         frame: frameIndex++,
         time_ms: performance.now(),
-        keypoints: poses[0].keypoints.map(k => ({
+        keypoints: kps.map(k => ({
           name: k.name,
           x: k.x,
           y: k.y,
@@ -174,47 +198,32 @@ async function loop() {
   requestAnimationFrame(loop);
 }
 
-/* ---------- Skeleton Preview ---------- */
-function drawSkeleton(kps) {
-  ctx.fillStyle = "white";
-  for (let k of kps) {
-    if (k.score > 0.4) {
-      ctx.beginPath();
-      ctx.arc(k.x, k.y, 4, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-}
-
-/* ---------- Controls ---------- */
+/* ---- Controls ---- */
 recordBtn.onclick = () => {
   poseFrames = [];
   frameIndex = 0;
   recording = true;
   recordBtn.disabled = true;
   stopBtn.disabled = false;
-  statusEl.textContent = "Recording pose points…";
+  setStatus("Recording pose points…");
 };
 
 stopBtn.onclick = () => {
   recording = false;
   stopBtn.disabled = true;
   recordBtn.disabled = false;
-  statusEl.textContent = "Saving pose data…";
 
   const blob = new Blob(
     [JSON.stringify({ fps:30, frames: poseFrames }, null, 2)],
     { type:"application/json" }
   );
 
-  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url;
+  a.href = URL.createObjectURL(blob);
   a.download = "TUG_pose_only.json";
   a.click();
-  URL.revokeObjectURL(url);
 
-  statusEl.textContent = "Saved: TUG_pose_only.json (privacy-safe)";
+  setStatus("Saved: TUG_pose_only.json (privacy-safe)");
 };
 </script>
 </body>
