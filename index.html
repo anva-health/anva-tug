@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>ANVA TUG — Pose Only (Privacy Safe)</title>
+  <title>ANVA — TUG (Privacy-Safe)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <!-- TensorFlow + MoveNet -->
@@ -39,18 +39,22 @@
     #stopBtn { background:#dc3545; color:white; }
     button:disabled { opacity:0.4; cursor:not-allowed; }
     #status { margin-top:10px; font-weight:700; }
-    video { display:none; } /* raw video never shown */
+    video { display:none; }     /* raw camera NEVER shown */
     canvas { width:100%; margin-top:10px; background:#000; border-radius:10px; }
   </style>
 </head>
 
 <body>
-<h1>ANVA — TUG (Pose Only)</h1>
+<h1>ANVA — Timed Up & Go</h1>
 
 <div class="card">
-  <p><b>Privacy mode:</b> Only pose points are saved. No video is recorded.</p>
+  <p><b>Privacy mode:</b> camera used only for live pose extraction.<br>
+     <b>No video or images are ever saved.</b></p>
 
+  <!-- Raw camera feed (hidden, never recorded) -->
   <video id="video" autoplay playsinline muted></video>
+
+  <!-- Optional skeleton preview (points only) -->
   <canvas id="canvas"></canvas>
 
   <div>
@@ -77,10 +81,10 @@ let stream = null;
 let recording = false;
 let frameIndex = 0;
 
-// Pose storage (THIS is what we save)
+// THIS is the only thing we save
 let poseFrames = [];
 
-// ---------- Load MoveNet ----------
+// ---------------- Load MoveNet ----------------
 async function loadDetector() {
   await tf.ready();
   detector = await poseDetection.createDetector(
@@ -89,9 +93,9 @@ async function loadDetector() {
   );
 }
 
-// ---------- Camera ----------
+// ---------------- Start Camera ----------------
 startBtn.onclick = async () => {
-  statusEl.textContent = "Starting camera...";
+  statusEl.textContent = "Starting camera…";
   stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:false });
   video.srcObject = stream;
   await video.play();
@@ -106,11 +110,10 @@ startBtn.onclick = async () => {
   requestAnimationFrame(loop);
 };
 
-// ---------- Main Loop ----------
+// ---------------- Main Loop ----------------
 async function loop() {
   if (!video.videoWidth) return requestAnimationFrame(loop);
 
-  // Draw skeleton preview (optional, no pixels saved)
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
   const poses = await detector.estimatePoses(video, { maxPoses:1 });
@@ -130,11 +133,10 @@ async function loop() {
       });
     }
   }
-
   requestAnimationFrame(loop);
 }
 
-// ---------- Skeleton Drawing (for preview only) ----------
+// ---------------- Skeleton Preview (optional) ----------------
 function drawSkeleton(kps) {
   ctx.fillStyle = "white";
   for (let k of kps) {
@@ -146,7 +148,7 @@ function drawSkeleton(kps) {
   }
 }
 
-// ---------- Recording Controls ----------
+// ---------------- Controls ----------------
 recordBtn.onclick = () => {
   poseFrames = [];
   frameIndex = 0;
@@ -174,7 +176,7 @@ stopBtn.onclick = () => {
   a.click();
   URL.revokeObjectURL(url);
 
-  statusEl.textContent = "Saved: TUG_pose_only.json";
+  statusEl.textContent = "Saved: TUG_pose_only.json (privacy-safe)";
 };
 </script>
 </body>
