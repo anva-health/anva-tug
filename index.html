@@ -2,303 +2,180 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>ANVA — Timed Up & Go (Privacy-Safe Capture)</title>
+  <title>ANVA TUG — Pose Only (Privacy Safe)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
+  <!-- TensorFlow + MoveNet -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.9.0/dist/tf-core.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.9.0/dist/tf-backend-webgl.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@0.0.8/dist/pose-detection.min.js"></script>
+
   <style>
-    body{
+    body {
       font-family: Arial, sans-serif;
-      background:#f6f7f9;
-      text-align:center;
-      padding:16px;
-      color:#111;
+      background: #f6f7f9;
+      text-align: center;
+      padding: 16px;
     }
-    h1{ color:#0b5ed7; margin: 8px 0 14px; }
-    .card{
+    h1 { color: #0b5ed7; }
+    .card {
       max-width: 460px;
-      margin: 0 auto;
-      background: #fff;
-      border-radius: 14px;
-      padding: 14px;
+      margin: auto;
+      background: white;
+      padding: 16px;
+      border-radius: 12px;
       box-shadow: 0 6px 18px rgba(0,0,0,0.08);
     }
-    #cameraBox{
-      position: relative;
-      width:100%;
-      margin: 12px auto 10px;
-      display:none;
-    }
-    #canvas{
-      width:100%;
-      border-radius: 12px;
-      background:#000;
-    }
-    .row{
-      display:flex;
-      gap:10px;
-      justify-content:center;
-      flex-wrap:wrap;
-      margin: 10px 0;
-    }
-    button{
+    button {
       padding: 10px 14px;
+      margin: 6px;
+      border-radius: 8px;
       border: none;
-      border-radius: 10px;
+      font-weight: 700;
       cursor: pointer;
-      font-weight: 700;
-      font-size: 15px;
     }
-    #startBtn{ background:#0b5ed7; color:#fff; }
-    #recordBtn{ background:#198754; color:#fff; }
-    #stopBtn{ background:#dc3545; color:#fff; }
-    button:disabled{ opacity:0.45; cursor:not-allowed; }
-    .small{
-      font-size: 13px;
-      color:#444;
-      margin-top: 6px;
-      line-height: 1.35;
-    }
-    #status{
-      margin-top:10px;
-      font-weight:700;
-      padding: 8px 10px;
-      border-radius: 10px;
-      display:inline-block;
-      min-width: 280px;
-    }
-    .ok{ background:#e7f7ee; color:#146c43; }
-    .bad{ background:#fdecec; color:#b02a37; }
-
-    .sliderWrap{
-      margin: 10px auto 0;
-      text-align:left;
-      max-width: 420px;
-    }
-    .sliderWrap label{
-      display:block;
-      font-size: 13px;
-      color:#333;
-      margin: 6px 0 6px;
-      font-weight: 700;
-    }
-    input[type="range"]{
-      width:100%;
-    }
-    .hint{
-      font-size: 12px;
-      color:#666;
-      margin-top: 6px;
-      text-align:left;
-      max-width:420px;
-      margin-left:auto;
-      margin-right:auto;
-    }
-    .pill{
-      display:inline-block;
-      padding: 2px 8px;
-      border-radius: 999px;
-      background:#eef2ff;
-      color:#1e40af;
-      font-size: 12px;
-      font-weight: 700;
-    }
+    #startBtn { background:#0b5ed7; color:white; }
+    #recordBtn { background:#198754; color:white; }
+    #stopBtn { background:#dc3545; color:white; }
+    button:disabled { opacity:0.4; cursor:not-allowed; }
+    #status { margin-top:10px; font-weight:700; }
+    video { display:none; } /* raw video never shown */
+    canvas { width:100%; margin-top:10px; background:#000; border-radius:10px; }
   </style>
 </head>
 
 <body>
-  <h1>ANVA — Timed Up & Go</h1>
+<h1>ANVA — TUG (Pose Only)</h1>
 
-  <div class="card">
-    <div class="small">
-      <span class="pill">Privacy-safe recording</span><br/>
-      This page records the <b>masked canvas</b> (not the raw camera). The top portion is blacked out to prevent face capture.
-    </div>
+<div class="card">
+  <p><b>Privacy mode:</b> Only pose points are saved. No video is recorded.</p>
 
-    <div id="cameraBox">
-      <!-- Raw camera video (hidden) -->
-      <video id="video" autoplay playsinline muted style="display:none;"></video>
-      <!-- What user sees + what gets recorded -->
-      <canvas id="canvas"></canvas>
-    </div>
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="canvas"></canvas>
 
-    <div class="row">
-      <button id="startBtn">Start Camera</button>
-      <button id="recordBtn" disabled>Record TUG</button>
-      <button id="stopBtn" disabled>Stop</button>
-    </div>
-
-    <div class="sliderWrap">
-      <label for="maskRange">Privacy Mask Strength (Top Blackout): <span id="maskPct">40%</span></label>
-      <input id="maskRange" type="range" min="25" max="60" value="40" step="1" />
-      <div class="hint">
-        Start at <b>40%</b>. If there’s any chance the face appears during forward lean, increase to <b>45–55%</b>.
-        Keep hips + feet visible in the preview.
-      </div>
-    </div>
-
-    <div id="status" class="bad">Press “Start Camera”.</div>
-
-    <div class="small" style="margin-top:10px;">
-      Tip: Do a quick rehearsal sit-to-stand with forward lean. If face could appear, raise the mask %.
-    </div>
+  <div>
+    <button id="startBtn">Start Camera</button>
+    <button id="recordBtn" disabled>Start TUG</button>
+    <button id="stopBtn" disabled>Stop</button>
   </div>
 
+  <div id="status">Idle</div>
+</div>
+
 <script>
-  const startBtn  = document.getElementById("startBtn");
-  const recordBtn = document.getElementById("recordBtn");
-  const stopBtn   = document.getElementById("stopBtn");
-  const statusEl  = document.getElementById("status");
+let video = document.getElementById("video");
+let canvas = document.getElementById("canvas");
+let ctx = canvas.getContext("2d");
 
-  const video  = document.getElementById("video");
-  const canvas = document.getElementById("canvas");
-  const ctx    = canvas.getContext("2d", { alpha: false });
+let startBtn = document.getElementById("startBtn");
+let recordBtn = document.getElementById("recordBtn");
+let stopBtn = document.getElementById("stopBtn");
+let statusEl = document.getElementById("status");
 
-  const maskRange = document.getElementById("maskRange");
-  const maskPctEl = document.getElementById("maskPct");
+let detector = null;
+let stream = null;
+let recording = false;
+let frameIndex = 0;
 
-  let camStream = null;
-  let mediaRecorder = null;
-  let chunks = [];
+// Pose storage (THIS is what we save)
+let poseFrames = [];
 
-  // Mask fraction (top blackout). Adjustable by slider.
-  let maskFrac = parseInt(maskRange.value, 10) / 100;
+// ---------- Load MoveNet ----------
+async function loadDetector() {
+  await tf.ready();
+  detector = await poseDetection.createDetector(
+    poseDetection.SupportedModels.MoveNet,
+    { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
+  );
+}
 
-  function setStatus(msg, ok){
-    statusEl.textContent = msg;
-    statusEl.className = ok ? "ok" : "bad";
-  }
+// ---------- Camera ----------
+startBtn.onclick = async () => {
+  statusEl.textContent = "Starting camera...";
+  stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:false });
+  video.srcObject = stream;
+  await video.play();
 
-  // Draw loop: renders camera -> canvas, then applies mask.
-  function drawLoop(){
-    if (!video.videoWidth || !video.videoHeight) {
-      requestAnimationFrame(drawLoop);
-      return;
-    }
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
 
-    // Ensure canvas matches actual video resolution (not CSS size)
-    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-      canvas.width  = video.videoWidth;
-      canvas.height = video.videoHeight;
-    }
+  await loadDetector();
+  statusEl.textContent = "Camera ready. Press Start TUG.";
+  recordBtn.disabled = false;
 
-    // Draw raw frame
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  requestAnimationFrame(loop);
+};
 
-    // Apply top blackout mask
-    const maskY = Math.floor(canvas.height * maskFrac);
-    ctx.save();
-    ctx.fillStyle = "#000";
-    ctx.fillRect(0, 0, canvas.width, maskY);
-    ctx.restore();
+// ---------- Main Loop ----------
+async function loop() {
+  if (!video.videoWidth) return requestAnimationFrame(loop);
 
-    // Overlay small “privacy safe” label
-    ctx.save();
-    ctx.font = "16px Arial";
-    ctx.fillStyle = "#00ff66";
-    ctx.fillText("PRIVACY SAFE PREVIEW", 12, canvas.height - 14);
-    ctx.restore();
+  // Draw skeleton preview (optional, no pixels saved)
+  ctx.clearRect(0,0,canvas.width,canvas.height);
 
-    requestAnimationFrame(drawLoop);
-  }
+  const poses = await detector.estimatePoses(video, { maxPoses:1 });
+  if (poses.length > 0) {
+    drawSkeleton(poses[0].keypoints);
 
-  // Start camera
-  startBtn.onclick = async () => {
-    try {
-      camStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user" },
-        audio: false
+    if (recording) {
+      poseFrames.push({
+        frame: frameIndex++,
+        time_ms: performance.now(),
+        keypoints: poses[0].keypoints.map(k => ({
+          name: k.name,
+          x: k.x,
+          y: k.y,
+          score: k.score
+        }))
       });
-
-      video.srcObject = camStream;
-      await video.play();
-
-      document.getElementById("cameraBox").style.display = "block";
-      recordBtn.disabled = false;
-
-      setStatus("Preview running. Adjust mask % so face can’t appear, while keeping hips + feet visible.", true);
-      requestAnimationFrame(drawLoop);
-
-    } catch (err) {
-      console.error(err);
-      setStatus("Camera error: " + err.message, false);
     }
-  };
+  }
 
-  // Slider updates
-  maskRange.oninput = () => {
-    const val = parseInt(maskRange.value, 10);
-    maskPctEl.textContent = val + "%";
-    maskFrac = val / 100;
-  };
+  requestAnimationFrame(loop);
+}
 
-  // Record masked canvas stream
-  recordBtn.onclick = () => {
-    if (!camStream) {
-      setStatus("Start camera first.", false);
-      return;
+// ---------- Skeleton Drawing (for preview only) ----------
+function drawSkeleton(kps) {
+  ctx.fillStyle = "white";
+  for (let k of kps) {
+    if (k.score > 0.4) {
+      ctx.beginPath();
+      ctx.arc(k.x, k.y, 4, 0, Math.PI*2);
+      ctx.fill();
     }
+  }
+}
 
-    chunks = [];
+// ---------- Recording Controls ----------
+recordBtn.onclick = () => {
+  poseFrames = [];
+  frameIndex = 0;
+  recording = true;
+  recordBtn.disabled = true;
+  stopBtn.disabled = false;
+  statusEl.textContent = "Recording pose points…";
+};
 
-    const safeStream = canvas.captureStream(30);
+stopBtn.onclick = () => {
+  recording = false;
+  stopBtn.disabled = true;
+  recordBtn.disabled = false;
+  statusEl.textContent = "Saving pose data…";
 
-    // iOS/Safari can be picky; prefer supported types
-    let options = {};
-    if (window.MediaRecorder && MediaRecorder.isTypeSupported("video/webm;codecs=vp8")) {
-      options = { mimeType: "video/webm;codecs=vp8" };
-    } else if (window.MediaRecorder && MediaRecorder.isTypeSupported("video/webm")) {
-      options = { mimeType: "video/webm" };
-    } // else let browser pick
+  const blob = new Blob(
+    [JSON.stringify({ fps:30, frames: poseFrames }, null, 2)],
+    { type:"application/json" }
+  );
 
-    try {
-      mediaRecorder = new MediaRecorder(safeStream, options);
-    } catch (err) {
-      console.error(err);
-      setStatus("Recorder error: " + err.message, false);
-      return;
-    }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "TUG_pose_only.json";
+  a.click();
+  URL.revokeObjectURL(url);
 
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) chunks.push(e.data);
-    };
-
-    mediaRecorder.onstop = () => {
-      const type = mediaRecorder.mimeType || "video/webm";
-      const blob = new Blob(chunks, { type });
-      const url = URL.createObjectURL(blob);
-
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "TUG_privacy_safe.webm";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-
-      URL.revokeObjectURL(url);
-      setStatus("Saved: TUG_privacy_safe.webm (privacy-safe). Upload this to Drive for Colab.", true);
-    };
-
-    mediaRecorder.start();
-    recordBtn.disabled = true;
-    stopBtn.disabled = false;
-    setStatus("Recording… (canvas is masked + safe). Press Stop when done.", true);
-  };
-
-  // Stop recording
-  stopBtn.onclick = () => {
-    if (mediaRecorder && mediaRecorder.state !== "inactive") {
-      mediaRecorder.stop();
-    }
-    stopBtn.disabled = true;
-    recordBtn.disabled = false;
-  };
-
-  // Safety: stop camera when leaving page
-  window.addEventListener("beforeunload", () => {
-    try {
-      if (camStream) camStream.getTracks().forEach(t => t.stop());
-    } catch(e) {}
-  });
+  statusEl.textContent = "Saved: TUG_pose_only.json";
+};
 </script>
 </body>
 </html>
