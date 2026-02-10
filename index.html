@@ -6,405 +6,694 @@
   <title>ANVA — TUG (Pose Only)</title>
 
   <style>
-    :root { --brand:#0b5ed7; --ok:#16a34a; --warn:#b45309; --danger:#ef4444; --bg:#f6f7f9; --card:#fff; }
-    body { margin:0; font-family: Arial, sans-serif; background:var(--bg); text-align:center; padding:16px; }
-    h1 { color:var(--brand); margin:10px 0 6px; letter-spacing:1px; }
-    .sub { color:#4b5563; font-size:14px; margin:0 0 12px; }
-    .card { max-width:420px; margin:0 auto; background:var(--card); border-radius:16px; padding:14px; box-shadow:0 10px 28px rgba(0,0,0,.08); }
-    #stage { position:relative; width:100%; aspect-ratio:9/16; background:#000; border-radius:14px; overflow:hidden; }
-    video { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:none; }
-    canvas { position:absolute; inset:0; width:100%; height:100%; }
-    #badge { position:absolute; top:10px; left:10px; padding:8px 10px; border-radius:999px; font-weight:800; font-size:12px; color:#fff; background:#374151; }
-    .row { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin:12px 0 6px; }
-    button { border:none; border-radius:12px; padding:14px 14px; font-size:16px; font-weight:800; min-width:120px; cursor:pointer; }
-    button:disabled { opacity:.45; cursor:not-allowed; }
-    #btnCamera { background:var(--brand); color:#fff; }
-    #btnTape { background:#10b981; color:#052e24; }
-    #btnStart { background:#86efac; color:#052e24; }
-    #btnStop { background:#fecaca; color:#450a0a; }
-    .small { font-size:13px; color:#111827; margin:10px 0 0; line-height:1.35; }
-    .small b { font-weight:900; }
-    .toggle { display:flex; align-items:center; justify-content:center; gap:8px; margin:8px 0 0; font-size:14px; color:#374151; }
-    #status { margin:10px 0 0; font-weight:800; color:#065f46; min-height:22px; }
-    code { background:#eef2ff; padding:2px 6px; border-radius:6px; }
+    :root{
+      --brand:#0b5ed7;
+      --ok:#198754;
+      --warn:#b3261e;
+      --muted:#6b7280;
+      --bg:#f6f7f9;
+      --card:#ffffff;
+    }
+    body{
+      margin:0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background:var(--bg);
+      color:#111827;
+      text-align:center;
+      padding:16px 14px 28px;
+    }
+    h1{
+      margin:10px 0 4px;
+      color:var(--brand);
+      font-size:30px;
+      letter-spacing:0.2px;
+    }
+    .sub{
+      margin:0 0 14px;
+      color:var(--muted);
+      font-weight:700;
+    }
+    .card{
+      max-width:520px;
+      margin:0 auto;
+      background:var(--card);
+      border-radius:18px;
+      padding:14px;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.08);
+    }
+    .hint{
+      text-align:left;
+      background:#f3f4f6;
+      border-radius:14px;
+      padding:12px 12px;
+      margin:10px 0 12px;
+      line-height:1.25;
+      font-size:14px;
+    }
+    .hint b{ font-weight:900; }
+    .stage{
+      position:relative;
+      width:100%;
+      max-width:480px;
+      margin:10px auto 12px;
+      border-radius:16px;
+      overflow:hidden;
+      background:#000;
+      touch-action: manipulation;
+    }
+    video, canvas{
+      width:100%;
+      height:auto;
+      display:block;
+      background:#000;
+    }
+    #video{
+      position:absolute;
+      inset:0;
+      opacity:0;
+      pointer-events:none;
+    }
+    #pill{
+      position:absolute;
+      left:10px;
+      top:10px;
+      z-index:5;
+      padding:7px 12px;
+      border-radius:999px;
+      font-weight:900;
+      font-size:12px;
+      color:#fff;
+      background:#111827cc;
+      backdrop-filter: blur(4px);
+    }
+    #toast{
+      position:absolute;
+      left:50%;
+      bottom:10px;
+      transform:translateX(-50%);
+      z-index:6;
+      padding:9px 12px;
+      border-radius:999px;
+      font-weight:800;
+      font-size:12px;
+      color:#fff;
+      background:#111827cc;
+      opacity:0;
+      transition:opacity 0.2s ease;
+      pointer-events:none;
+      max-width:92%;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .row{
+      display:flex;
+      justify-content:center;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-top:10px;
+    }
+    button{
+      border:none;
+      border-radius:14px;
+      padding:12px 14px;
+      font-size:15px;
+      font-weight:900;
+      cursor:pointer;
+      min-width:150px;
+    }
+    button.primary{ background:var(--brand); color:#fff; }
+    button.good{ background:var(--ok); color:#fff; }
+    button.secondary{ background:#9ca3af; color:#fff; }
+    button.danger{ background:var(--warn); color:#fff; }
+    button:disabled{
+      opacity:0.45;
+      cursor:not-allowed;
+    }
+    .checks{
+      text-align:left;
+      max-width:480px;
+      margin:6px auto 0;
+      color:#111827;
+      font-size:14px;
+    }
+    .checks label{ display:block; margin:8px 0; }
+    .status{
+      margin-top:12px;
+      font-weight:900;
+      color:#065f46;
+    }
+    .status.warn{ color:var(--warn); }
+    .workflow{
+      margin-top:10px;
+      color:#111827;
+      font-size:14px;
+      line-height:1.25;
+    }
+    .mono{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size:12px;
+      color:#374151;
+      text-align:left;
+      background:#f3f4f6;
+      border-radius:12px;
+      padding:10px;
+      overflow:auto;
+      max-height:160px;
+      margin-top:10px;
+    }
   </style>
 
-  <!-- TensorFlow.js + MoveNet -->
+  <!-- TFJS + MoveNet -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js.map"></script>
 </head>
 
 <body>
   <h1>ANVA — TUG (Pose Only)</h1>
-  <p class="sub">Privacy mode: Camera used only to extract pose. No video/images are saved.</p>
+  <p class="sub">Privacy mode: camera used only to extract pose. No video/images are saved.</p>
 
   <div class="card">
-    <div class="small">
-      <b>Privacy mode:</b> Camera is used only to extract pose.<br/>
-      <b>No video/images</b> are ever saved.
+    <div class="hint">
+      <b>Setup:</b> Frontal view. Full body <b>below neck</b> + feet visible. Blue tape visible on floor. <br/>
+      <b>Tape step:</b> After camera starts, <b>tap directly on the blue tape</b> in the preview to lock tape level.
     </div>
 
-    <div id="stage">
-      <div id="badge">LOAD</div>
+    <div class="stage" id="stage">
+      <div id="pill">READY</div>
+      <div id="toast"></div>
+
+      <!-- video is optional preview only -->
       <video id="video" playsinline muted></video>
+      <!-- canvas shows stick figure (no camera pixels) -->
       <canvas id="canvas"></canvas>
     </div>
 
-    <label class="toggle">
-      <input id="showVideo" type="checkbox" />
-      Show live video under stick figure (preview only)
-    </label>
-
-    <div class="row">
-      <button id="btnCamera">Start Camera</button>
-      <button id="btnTape" disabled>Set Tape</button>
-    </div>
-    <div class="row">
-      <button id="btnStart" disabled>Start TUG</button>
-      <button id="btnStop" disabled>Stop</button>
+    <div class="checks">
+      <label><input type="checkbox" id="showLive"> Show live video under stick figure (preview only)</label>
+      <label><input type="checkbox" id="saveStick" checked> Record stick-figure-only video (no pixels) as WebM</label>
     </div>
 
-    <div id="status">Loading libraries…</div>
-    <div class="small" style="margin-top:8px;">
-      Workflow: <b>Start Camera</b> → <b>Set Tape</b> (tap on tape) → <b>Start TUG</b> → <b>Stop</b> → JSON downloads
+    <div class="row">
+      <button class="primary" id="btnStartCam">Start Camera</button>
+      <button class="secondary" id="btnSwitch">Switch Camera</button>
     </div>
+
+    <div class="row">
+      <button class="good" id="btnSetTape" disabled>Set Tape (tap on tape)</button>
+      <button class="danger" id="btnStart" disabled>Start TUG</button>
+    </div>
+
+    <div class="row">
+      <button class="secondary" id="btnStop" disabled>Stop</button>
+    </div>
+
+    <div class="status" id="statusLine">Libraries loading…</div>
+
+    <div class="workflow">
+      <b>Workflow:</b> Start Camera → tap tape → Set Tape turns green → Start TUG → Stop → JSON downloads
+    </div>
+
+    <div class="mono" id="debug"></div>
   </div>
 
 <script>
 (() => {
+  // ---------- DOM ----------
   const video = document.getElementById('video');
   const canvas = document.getElementById('canvas');
+  const stage = document.getElementById('stage');
   const ctx = canvas.getContext('2d');
 
-  const badge = document.getElementById('badge');
-  const statusEl = document.getElementById('status');
+  const pill = document.getElementById('pill');
+  const toast = document.getElementById('toast');
+  const statusLine = document.getElementById('statusLine');
+  const debugEl = document.getElementById('debug');
 
-  const btnCamera = document.getElementById('btnCamera');
-  const btnTape = document.getElementById('btnTape');
+  const btnStartCam = document.getElementById('btnStartCam');
+  const btnSwitch = document.getElementById('btnSwitch');
+  const btnSetTape = document.getElementById('btnSetTape');
   const btnStart = document.getElementById('btnStart');
-  const btnStop  = document.getElementById('btnStop');
-  const showVideo = document.getElementById('showVideo');
+  const btnStop = document.getElementById('btnStop');
 
-  // --- State ---
+  const showLive = document.getElementById('showLive');
+  const saveStick = document.getElementById('saveStick');
+
+  // ---------- State ----------
   let detector = null;
   let stream = null;
+  let facingMode = 'environment'; // default rear camera (often better for floor)
   let rafId = null;
 
-  let tapeYNorm = null;      // saved into JSON meta
-  let tapeArmed = false;     // when true, next tap sets tape
-  let tugRecording = false;  // when true, we store frames
-  let frames = [];           // keypoints-only frames
-  let startEpochMs = null;
+  let lastGoodPoseTs = 0;
+  let headDetected = false;
 
-  // --- Config ---
-  const MODEL = poseDetection.SupportedModels.MoveNet;
-  const modelConfig = { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING };
+  // Tape calibration (normalized 0..1)
+  let tape_y_norm = null;
 
-  // For gating: require a few consecutive frames with decent hip/ankle scores
-  let stableCount = 0;
-  const STABLE_NEED = 10;
-  const MIN_SCORE = 0.25;
+  // Capture
+  let capturing = false;
+  let frames = [];
+  let captureStartMs = 0;
+  let mediaRecorder = null;
+  let stickChunks = [];
 
-  function setBadge(text, color){
-    badge.textContent = text;
-    badge.style.background = color || '#374151';
+  // ---------- Helpers ----------
+  function log(msg){
+    debugEl.textContent = (debugEl.textContent + msg + "\n").slice(-6000);
+    debugEl.scrollTop = debugEl.scrollHeight;
   }
 
-  function setStatus(text, color){
-    statusEl.textContent = text;
-    statusEl.style.color = color || '#065f46';
+  function setPill(text, bg){
+    pill.textContent = text;
+    pill.style.background = bg || '#111827cc';
   }
 
-  function resizeCanvas(){
-    const rect = canvas.getBoundingClientRect();
-    canvas.width  = Math.floor(rect.width  * devicePixelRatio);
-    canvas.height = Math.floor(rect.height * devicePixelRatio);
-    ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+  function showToast(msg){
+    toast.textContent = msg;
+    toast.style.opacity = '1';
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => toast.style.opacity = '0', 1600);
   }
 
-  function nowIsoCompact(){
-    const d = new Date();
-    const pad = n => String(n).padStart(2,'0');
-    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
+  function nowMs(){ return performance.now(); }
+
+  function downloadBlob(blob, filename){
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      URL.revokeObjectURL(a.href);
+      a.remove();
+    }, 0);
   }
 
-  function keypointsToNamed(kps){
-    // MoveNet returns 17 points with .name sometimes absent; map by index fallback
-    const names = [
-      "nose","left_eye","right_eye","left_ear","right_ear",
-      "left_shoulder","right_shoulder","left_elbow","right_elbow",
-      "left_wrist","right_wrist","left_hip","right_hip",
-      "left_knee","right_knee","left_ankle","right_ankle"
-    ];
-    return kps.map((k,i) => ({
-      name: k.name || names[i] || `kp_${i}`,
-      x: k.x,
-      y: k.y,
-      score: (k.score ?? 0)
-    }));
+  function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+
+  function canvasRect(){
+    return canvas.getBoundingClientRect();
   }
 
-  function drawStickFigure(kps){
+  function getTapYNorm(evt){
+    const r = canvasRect();
+    const clientY = (evt.touches && evt.touches[0]) ? evt.touches[0].clientY : evt.clientY;
+    const y = clientY - r.top;
+    return clamp01(y / r.height);
+  }
+
+  // Privacy guard: if any of these are confidently detected, head is in frame.
+  const HEAD_KPS = ['nose','left_eye','right_eye','left_ear','right_ear'];
+
+  function poseToKeypoints(pose){
+    // pose-detection returns keypoints with name, x, y, score
+    const out = [];
+    for (const kp of pose.keypoints || []){
+      out.push({
+        name: kp.name || kp.part || '',
+        x: Number(kp.x ?? 0),
+        y: Number(kp.y ?? 0),
+        score: Number(kp.score ?? 0)
+      });
+    }
+    return out;
+  }
+
+  function getKpByName(kps){
+    const m = {};
+    for (const k of kps) m[k.name] = k;
+    return m;
+  }
+
+  function drawStick(kps){
     // Clear
     ctx.clearRect(0,0,canvas.width,canvas.height);
 
-    // If live video preview enabled, show it underneath (not saved)
-    if(showVideo.checked){
-      // draw video into canvas background
-      ctx.save();
-      ctx.globalAlpha = 1.0;
-      ctx.drawImage(video, 0, 0, canvas.width/devicePixelRatio, canvas.height/devicePixelRatio);
-      ctx.restore();
-    }
+    // Background black already from canvas style
+    // Draw joints + simple connections
+    const K = getKpByName(kps);
+    const minScore = 0.25;
 
-    // draw joints + simple skeleton
-    const w = canvas.width/devicePixelRatio, h = canvas.height/devicePixelRatio;
-
-    const byName = {};
-    for(const p of kps){ byName[p.name] = p; }
-
-    const P = n => byName[n] ? [byName[n].x, byName[n].y, byName[n].score] : null;
-
-    const segs = [
-      ["left_shoulder","right_shoulder"],
-      ["left_shoulder","left_elbow"],
-      ["left_elbow","left_wrist"],
-      ["right_shoulder","right_elbow"],
-      ["right_elbow","right_wrist"],
-      ["left_shoulder","left_hip"],
-      ["right_shoulder","right_hip"],
-      ["left_hip","right_hip"],
-      ["left_hip","left_knee"],
-      ["left_knee","left_ankle"],
-      ["right_hip","right_knee"],
-      ["right_knee","right_ankle"],
-    ];
-
-    // lines
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(0,255,140,0.9)";
-    for(const [a,b] of segs){
-      const A = P(a), B = P(b);
-      if(!A || !B) continue;
-      if(A[2] < MIN_SCORE || B[2] < MIN_SCORE) continue;
+    function dot(name){
+      const p = K[name];
+      if (!p || p.score < minScore) return;
       ctx.beginPath();
-      ctx.moveTo(A[0]*w, A[1]*h);
-      ctx.lineTo(B[0]*w, B[1]*h);
+      ctx.arc(p.x, p.y, 5, 0, Math.PI*2);
+      ctx.fillStyle = '#00ff99';
+      ctx.fill();
+    }
+    function line(a,b){
+      const p = K[a], q = K[b];
+      if (!p || !q) return;
+      if (p.score < minScore || q.score < minScore) return;
+      ctx.beginPath();
+      ctx.moveTo(p.x,p.y);
+      ctx.lineTo(q.x,q.y);
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = '#00ff99';
       ctx.stroke();
     }
 
-    // points
-    ctx.fillStyle = "rgba(0,255,140,0.9)";
-    for(const p of kps){
-      if((p.score ?? 0) < MIN_SCORE) continue;
-      ctx.beginPath();
-      ctx.arc(p.x*w, p.y*h, 4, 0, Math.PI*2);
-      ctx.fill();
-    }
+    // Skeleton (MoveNet-ish)
+    const links = [
+      ['left_shoulder','right_shoulder'],
+      ['left_shoulder','left_elbow'], ['left_elbow','left_wrist'],
+      ['right_shoulder','right_elbow'], ['right_elbow','right_wrist'],
+      ['left_shoulder','left_hip'], ['right_shoulder','right_hip'],
+      ['left_hip','right_hip'],
+      ['left_hip','left_knee'], ['left_knee','left_ankle'],
+      ['right_hip','right_knee'], ['right_knee','right_ankle']
+    ];
+    for (const [a,b] of links) line(a,b);
 
-    // NOTE: no tape line drawn (your requirement)
+    // Dots for main joints
+    ['left_shoulder','right_shoulder','left_hip','right_hip','left_knee','right_knee','left_ankle','right_ankle',
+     'left_elbow','right_elbow','left_wrist','right_wrist'].forEach(dot);
+
+    // Optional: if live video is enabled, show beneath (preview only)
+    // (We do that by setting video opacity; no pixels saved.)
   }
 
-  function isStablePose(kps){
-    const need = ["left_hip","right_hip","left_ankle","right_ankle"];
-    const byName = {};
-    for(const p of kps) byName[p.name]=p;
-    for(const n of need){
-      if(!byName[n]) return false;
-      if((byName[n].score ?? 0) < MIN_SCORE) return false;
-    }
-    return true;
-  }
-
-  async function initDetector(){
-    await tf.setBackend('webgl').catch(()=>{});
-    await tf.ready();
-    detector = await poseDetection.createDetector(MODEL, modelConfig);
+  async function initModel(){
+    statusLine.textContent = 'Loading pose model…';
+    const model = poseDetection.SupportedModels.MoveNet;
+    detector = await poseDetection.createDetector(model, {
+      modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING
+    });
+    statusLine.textContent = 'Libraries loaded. Tap Start Camera.';
+    log('Model loaded.');
   }
 
   async function startCamera(){
-    if(stream) return;
-    resizeCanvas();
+    if (stream){
+      stream.getTracks().forEach(t => t.stop());
+      stream = null;
+    }
 
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio:false,
-      video:{
-        facingMode:"user",
-        width:{ ideal: 720 },
-        height:{ ideal: 1280 }
+    const constraints = {
+      audio: false,
+      video: {
+        facingMode: { ideal: facingMode },
+        width: { ideal: 720 },
+        height: { ideal: 1280 }
       }
-    });
+    };
 
+    statusLine.textContent = 'Starting camera…';
+    setPill('WAIT', '#b45309cc');
+
+    stream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = stream;
     await video.play();
 
-    // If preview enabled, we still never save pixels.
-    setBadge("CAM", "#111827");
-    setStatus("Camera started. Now tap Set Tape, then tap on the floor tape.", "#065f46");
+    // Size canvas to match video
+    const vw = video.videoWidth || 720;
+    const vh = video.videoHeight || 1280;
+    canvas.width = vw;
+    canvas.height = vh;
 
-    btnTape.disabled = false;
-    btnStop.disabled = false;
+    // Live preview toggle
+    video.style.opacity = showLive.checked ? '0.35' : '0.0';
 
-    loop();
+    tape_y_norm = null;
+    btnSetTape.disabled = false;
+    btnSetTape.classList.remove('good');
+    btnSetTape.classList.add('good'); // stays green style but we’ll indicate by text
+    btnSetTape.textContent = 'Set Tape (tap on tape)';
+
+    btnStart.disabled = true;
+    btnStop.disabled = true;
+
+    headDetected = false;
+    lastGoodPoseTs = 0;
+
+    statusLine.textContent = 'Camera started. Tap the blue tape, then press Set Tape.';
+    showToast('Camera started ✅ Now tap the blue tape.');
+    log(`Camera started. facingMode=${facingMode} size=${vw}x${vh}`);
+
+    // Start loop
+    if (!rafId) loop();
+  }
+
+  function stopAll(){
+    capturing = false;
+    btnStop.disabled = true;
+    btnStart.disabled = true;
+
+    if (rafId){
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+    if (stream){
+      stream.getTracks().forEach(t => t.stop());
+      stream = null;
+    }
+    video.srcObject = null;
+
+    setPill('READY', '#111827cc');
+    statusLine.textContent = 'Stopped.';
+  }
+
+  function canStartTug(){
+    // Must have tape set, must have recent good pose, and must NOT detect head
+    const okPose = (nowMs() - lastGoodPoseTs) < 1200;
+    return (!!tape_y_norm) && okPose && !headDetected;
   }
 
   async function loop(){
-    if(!detector) return;
-
-    // keep canvas matched
-    if(canvas.width === 0) resizeCanvas();
-
-    try{
-      const poses = await detector.estimatePoses(video, { maxPoses: 1, flipHorizontal: true });
-      const pose = poses && poses[0];
-      if(pose && pose.keypoints){
-        const kps = keypointsToNamed(pose.keypoints);
-
-        drawStickFigure(kps);
-
-        if(isStablePose(kps)) stableCount++;
-        else stableCount = 0;
-
-        // gate Start TUG only when stable + tape set
-        const stableOk = stableCount >= STABLE_NEED;
-        if(stableOk && tapeYNorm !== null){
-          setBadge(tugRecording ? "REC" : "READY", tugRecording ? "#b91c1c" : "#16a34a");
-          btnStart.disabled = tugRecording ? true : false;
-        } else {
-          setBadge(tugRecording ? "REC" : "WAIT", tugRecording ? "#b91c1c" : "#b45309");
-          btnStart.disabled = true;
-        }
-
-        if(tugRecording){
-          const tMs = Date.now() - startEpochMs;
-          frames.push({
-            t_ms: tMs,
-            w: canvas.width / devicePixelRatio,
-            h: canvas.height / devicePixelRatio,
-            keypoints: kps.map(p => ({
-              name: p.name,
-              x: +(p.x).toFixed(5),
-              y: +(p.y).toFixed(5),
-              score: +(p.score ?? 0).toFixed(5)
-            }))
-          });
-        }
-      }
-    } catch(e){
-      // keep running; do not crash
-    }
-
     rafId = requestAnimationFrame(loop);
-  }
 
-  function armTape(){
-    tapeArmed = true;
-    setStatus("Tape capture armed: tap ON the blue tape (on the floor) once.", "#b45309");
-    btnTape.disabled = true;
-    setBadge("TAPE", "#10b981");
-  }
+    if (!detector || !stream) return;
 
-  function setTapeFromTap(clientY){
-    const rect = canvas.getBoundingClientRect();
-    const y = Math.max(0, Math.min(rect.height, (clientY - rect.top)));
-    tapeYNorm = y / rect.height;
-    tapeArmed = false;
-    setStatus(`Tape set. (Saved as meta.tape_y_norm = ${tapeYNorm.toFixed(3)}) Now get subject stable, then Start TUG.`, "#065f46");
-  }
+    // Keep preview opacity in sync
+    video.style.opacity = showLive.checked ? '0.35' : '0.0';
 
-  function startTug(){
-    if(tapeYNorm === null){
-      setStatus("You must Set Tape first.", "#b91c1c");
+    // Estimate pose
+    let poses = [];
+    try{
+      poses = await detector.estimatePoses(video, { maxPoses: 1, flipHorizontal: false });
+    }catch(e){
+      // Don’t spam
       return;
     }
+    if (!poses || poses.length === 0) return;
+
+    const pose = poses[0];
+    const kps = poseToKeypoints(pose);
+    drawStick(kps);
+
+    // Determine if pose is "good enough"
+    const K = getKpByName(kps);
+    const lA = K['left_ankle'], rA = K['right_ankle'];
+    const lH = K['left_hip'], rH = K['right_hip'];
+    const poseGood =
+      (lA && rA && lH && rH) &&
+      (lA.score > 0.25 && rA.score > 0.25 && lH.score > 0.25 && rH.score > 0.25);
+
+    if (poseGood){
+      lastGoodPoseTs = nowMs();
+    }
+
+    // Privacy: head detected?
+    headDetected = false;
+    for (const n of HEAD_KPS){
+      const p = K[n];
+      if (p && p.score >= 0.35){
+        headDetected = true;
+        break;
+      }
+    }
+
+    // UI status
+    if (!poseGood){
+      setPill('WAIT', '#b45309cc');
+    } else if (headDetected){
+      setPill('HEAD DETECTED', '#b3261ecc');
+    } else if (!tape_y_norm){
+      setPill('TAP TAPE', '#0f766ecc');
+    } else {
+      setPill('READY', '#065f46cc');
+    }
+
+    // Enable Start TUG appropriately
+    btnStart.disabled = !canStartTug();
+
+    // If capturing, store frame
+    if (capturing){
+      const t_ms = Math.round((nowMs() - captureStartMs)); // relative ms
+      frames.push({
+        t_ms,
+        w: canvas.width,
+        h: canvas.height,
+        keypoints: kps
+      });
+    }
+  }
+
+  function startCapture(){
+    if (!canStartTug()){
+      showToast('Need: tape set + good pose + no head in frame.');
+      return;
+    }
+
+    capturing = true;
     frames = [];
-    tugRecording = true;
-    startEpochMs = Date.now();
+    captureStartMs = nowMs();
+
+    btnStop.disabled = false;
     btnStart.disabled = true;
-    setBadge("REC", "#b91c1c");
-    setStatus("Recording pose keypoints… Tap Stop at end.", "#b91c1c");
+    btnSetTape.disabled = true;
+    btnStartCam.disabled = true;
+    btnSwitch.disabled = true;
+
+    statusLine.textContent = 'Capturing… (keypoints only)';
+    showToast('Capturing started ✅');
+
+    // Optional: record stick-figure-only WebM from canvas stream
+    if (saveStick.checked){
+      try{
+        stickChunks = [];
+        const canvasStream = canvas.captureStream(30);
+        mediaRecorder = new MediaRecorder(canvasStream, { mimeType: 'video/webm;codecs=vp8' });
+        mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size) stickChunks.push(e.data); };
+        mediaRecorder.start();
+      }catch(e){
+        log('Stick video recording not supported on this device/browser.');
+        mediaRecorder = null;
+      }
+    }
   }
 
-  function stopTug(){
-    if(!tugRecording){
-      setStatus("Not recording.", "#374151");
-      return;
+  function stopCapture(){
+    if (!capturing) return;
+    capturing = false;
+
+    btnStop.disabled = true;
+    btnSetTape.disabled = false;
+    btnStartCam.disabled = false;
+    btnSwitch.disabled = false;
+
+    // Stop recorder if present
+    if (mediaRecorder){
+      try{ mediaRecorder.stop(); }catch(e){}
     }
-    tugRecording = false;
-    setBadge("READY", "#16a34a");
-    btnStart.disabled = false;
+
+    // Build JSON
+    const ts = new Date();
+    const pad = (n) => String(n).padStart(2,'0');
+    const stamp = `${ts.getFullYear()}-${pad(ts.getMonth()+1)}-${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}`;
 
     const payload = {
       meta: {
-        app: "ANVA_TUG_POSE_ONLY",
-        version: "privacy_special_v1",
-        created_iso: new Date().toISOString(),
-        tape_y_norm: +(tapeYNorm.toFixed(6)),
-        flip_horizontal: true,
-        note: "No video/images saved. Pose keypoints only."
+        app: 'ANVA_TUG_POSE_ONLY',
+        version: 'tap-tape-v1',
+        created_local: ts.toString(),
+        facingMode,
+        tape_y_norm: tape_y_norm,     // <--- the important piece
+        note: 'No camera pixels saved. Keypoints only.'
       },
-      frames: frames
+      frames
     };
 
-    const blob = new Blob([JSON.stringify(payload)], { type:"application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `ANVA_TUG_KEYPOINTS_${nowIsoCompact()}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    const jsonBlob = new Blob([JSON.stringify(payload)], { type:'application/json' });
+    downloadBlob(jsonBlob, `ANVA_TUG_KEYPOINTS_${stamp}.json`);
+    statusLine.textContent = `Saved JSON: ${frames.length} frames.`;
 
-    setStatus(`Done. JSON downloaded with meta.tape_y_norm=${tapeYNorm.toFixed(3)}. Upload to Drive for Colab.`, "#065f46");
+    // Save stick video if available
+    if (stickChunks && stickChunks.length){
+      const webm = new Blob(stickChunks, { type:'video/webm' });
+      downloadBlob(webm, `ANVA_TUG_STICK_${stamp}.webm`);
+      stickChunks = [];
+    }
+
+    showToast('Saved ✅ JSON downloaded');
+    log(`Saved capture. frames=${frames.length} tape_y_norm=${tape_y_norm}`);
+
+    // Re-enable Start if still valid
+    btnStart.disabled = !canStartTug();
   }
 
-  // UI wiring
-  showVideo.addEventListener('change', () => {
-    video.style.display = showVideo.checked ? "block" : "none";
+  // ---------- Tape tap logic ----------
+  function armTapeTap(){
+    // User taps directly on the tape in the preview area
+    const y = getTapYNorm(event);
+  }
+
+  function setTapeFromTap(yNorm){
+    tape_y_norm = clamp01(yNorm);
+
+    btnSetTape.textContent = 'Tape Locked ✅';
+    showToast(`Tape locked (y=${tape_y_norm.toFixed(3)})`);
+
+    // Enable Start if pose is good and privacy OK
+    btnStart.disabled = !canStartTug();
+    statusLine.textContent = 'Tape set. Now you can Start TUG.';
+    log(`Tape set: tape_y_norm=${tape_y_norm.toFixed(4)}`);
+  }
+
+  // We accept tap on the STAGE (canvas area). No overlay line is drawn.
+  stage.addEventListener('click', (e) => {
+    if (!stream) return;
+    // If the user hasn't set tape yet, tap sets it immediately:
+    const yNorm = getTapYNorm(e);
+    setTapeFromTap(yNorm);
   });
 
-  btnCamera.addEventListener('click', async () => {
+  stage.addEventListener('touchstart', (e) => {
+    if (!stream) return;
+    const yNorm = getTapYNorm(e);
+    setTapeFromTap(yNorm);
+  }, { passive:true });
+
+  // Button Set Tape just reminds user; tapping sets it.
+  btnSetTape.addEventListener('click', () => {
+    if (!stream){
+      showToast('Start Camera first.');
+      return;
+    }
+    showToast('Now tap directly on the blue tape in the preview.');
+    statusLine.textContent = 'Tap the blue tape line in the preview area.';
+  });
+
+  // ---------- Events ----------
+  btnStartCam.addEventListener('click', async () => {
     try{
-      btnCamera.disabled = true;
-      setStatus("Starting camera…", "#374151");
       await startCamera();
-    } catch(e){
-      btnCamera.disabled = false;
-      setBadge("FAIL", "#b91c1c");
-      setStatus("Failed to start camera. Refresh and try again.", "#b91c1c");
+    }catch(e){
+      statusLine.textContent = 'Camera error. Check permissions.';
+      showToast('Camera permission denied or unavailable.');
+      log(String(e));
     }
   });
 
-  btnTape.addEventListener('click', armTape);
-  btnStart.addEventListener('click', startTug);
-  btnStop.addEventListener('click', stopTug);
-
-  // Tap on canvas to set tape (only when armed)
-  canvas.addEventListener('click', (ev) => {
-    if(!tapeArmed) return;
-    setTapeFromTap(ev.clientY);
-    btnTape.disabled = false;
+  btnSwitch.addEventListener('click', async () => {
+    facingMode = (facingMode === 'environment') ? 'user' : 'environment';
+    showToast(`Switching camera…`);
+    if (stream){
+      await startCamera();
+    }
   });
 
-  // Init
+  btnStart.addEventListener('click', startCapture);
+  btnStop.addEventListener('click', stopCapture);
+
+  showLive.addEventListener('change', () => {
+    video.style.opacity = showLive.checked ? '0.35' : '0.0';
+  });
+
+  // ---------- Init ----------
   (async () => {
     try{
-      setBadge("LOAD", "#374151");
-      setStatus("Loading libraries…", "#374151");
-      await initDetector();
-      setBadge("OK", "#16a34a");
-      setStatus("Libraries loaded. Tap Start Camera.", "#065f46");
-    } catch(e){
-      setBadge("FAIL", "#b91c1c");
-      setStatus("Failed to load libraries. Try refreshing.", "#b91c1c");
+      await initModel();
+      setPill('READY', '#111827cc');
+    }catch(e){
+      statusLine.textContent = 'Model load error (network blocked?)';
+      log(String(e));
     }
-    // ensure canvas size
-    window.addEventListener('resize', resizeCanvas);
-    resizeCanvas();
   })();
-
 })();
 </script>
-
 </body>
 </html>
+
