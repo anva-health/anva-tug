@@ -2,239 +2,460 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>ANVA — TUG (Pose Only, Privacy Safe)</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-  <!-- TFJS core -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.9.0/dist/tf-core.min.js"></script>
-
-  <!-- Backends: WebGL + WASM (WASM is the iPhone lifesaver) -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.9.0/dist/tf-backend-webgl.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.9.0/dist/tf-backend-wasm.min.js"></script>
-
-  <!-- Pose detection (MoveNet) -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@0.0.8/dist/pose-detection.min.js"></script>
-
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>ANVA — TUG Privacy (Stick Figure + Drive Share)</title>
   <style>
-    body{font-family:Arial,sans-serif;background:#f6f7f9;text-align:center;padding:16px;}
-    h1{color:#0b5ed7;}
-    .card{max-width:460px;margin:auto;background:#fff;padding:16px;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,0.08);}
-    button{padding:10px 14px;margin:6px;border-radius:8px;border:none;font-weight:700;cursor:pointer;}
-    #startBtn{background:#0b5ed7;color:#fff;}
-    #recordBtn{background:#198754;color:#fff;}
-    #stopBtn{background:#dc3545;color:#fff;}
-    button:disabled{opacity:0.4;cursor:not-allowed;}
-    #status{margin-top:10px;font-weight:700;}
-
-    /* iOS Safari: video must be "alive" but not visible */
-    #video{
-      position:fixed; top:0; left:0;
-      width:2px; height:2px;
-      opacity:0.01;          /* NOT 0 */
-      pointer-events:none;
-      z-index:-1;
-    }
-    canvas{width:100%;margin-top:10px;background:#000;border-radius:10px;}
-    .small{font-size:12px;color:#444;margin-top:8px;line-height:1.3;}
+    :root{ --brand:#0b5ed7; --ok:#1e8e3e; --warn:#b3261e; --bg:#f6f7f9; --card:#fff; --muted:#6b7280; }
+    body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; background:var(--bg); padding:14px; color:#111827; text-align:center;}
+    h1{ margin:6px 0 10px; font-size:18px; color:var(--brand); }
+    .card{ max-width:520px; margin:0 auto; background:var(--card); border-radius:14px; padding:12px; box-shadow:0 6px 22px rgba(0,0,0,.06);}
+    .hint{ font-size:13px; color:var(--muted); text-align:left; line-height:1.35; margin:8px 0 10px;}
+    .row{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:10px;}
+    button{ border:0; border-radius:12px; padding:12px 14px; font-size:14px; font-weight:700; cursor:pointer; background:var(--brand); color:#fff; min-width:150px;}
+    button.secondary{ background:#111827; }
+    button.good{ background:var(--ok); }
+    button.danger{ background:var(--warn); }
+    button:disabled{ opacity:.45; cursor:not-allowed; }
+    #stage{ position:relative; width:100%; max-width:480px; margin:10px auto 0; border-radius:14px; overflow:hidden; background:#000; display:none;}
+    video{ width:100%; height:auto; display:block; }
+    canvas{ width:100%; height:auto; display:block; background:#000; }
+    #pill{ position:absolute; left:10px; top:10px; padding:6px 10px; border-radius:999px; font-size:12px; color:#fff; background:rgba(0,0,0,.55); }
+    .tog{ display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:10px; font-size:13px; color:var(--muted); text-align:left;}
+    input[type="checkbox"]{ transform:scale(1.2); }
+    a.dl{ display:none; margin-top:12px; font-weight:800; color:var(--brand); text-decoration:none; word-break:break-word; }
+    pre{ text-align:left; font-size:12px; color:#111827; background:#f3f4f6; padding:10px; border-radius:12px; overflow:auto; display:none; }
+    .full{ width:100%; max-width:520px; }
   </style>
 </head>
-
 <body>
-<h1>ANVA — TUG (Pose Only)</h1>
+  <h1>ANVA — TUG (Privacy Special)</h1>
 
-<div class="card">
-  <p><b>Privacy mode:</b> Camera is used only to extract pose.<br><b>No video/images are ever saved.</b></p>
+  <div class="card">
+    <div class="hint">
+      <b>Privacy:</b> No camera video is saved. Outputs are <b>synthetic stick figure</b> + <b>keypoints JSON</b> only.<br/>
+      <b>Setup:</b> Frontal view. Keep body below neck + feet + blue tape visible.
+    </div>
 
-  <video id="video" autoplay playsinline muted></video>
-  <canvas id="canvas"></canvas>
+    <div class="row">
+      <button id="btnStart">Start Camera</button>
+      <button id="btnSwitch" class="secondary" disabled>Switch Camera</button>
+    </div>
 
-  <div>
-    <button id="startBtn">Start Camera</button>
-    <button id="recordBtn" disabled>Start TUG</button>
-    <button id="stopBtn" disabled>Stop</button>
+    <div id="stage">
+      <video id="vid" playsinline muted></video>
+      <div id="pill">Loading model…</div>
+      <canvas id="viz"></canvas>
+    </div>
+
+    <div class="tog">
+      <label><input id="chkShowVideo" type="checkbox" /> Show live video under stick figure (preview only)</label>
+    </div>
+    <div class="tog">
+      <label><input id="chkRecordStick" type="checkbox" checked /> Record stick figure (no pixels) as WebM</label>
+    </div>
+
+    <div class="row">
+      <button id="btnArm" class="good" disabled>Setup Looks Good</button>
+      <button id="btnGo" class="danger" disabled>Start Capture</button>
+      <button id="btnStop" class="secondary" disabled>Stop</button>
+    </div>
+
+    <a id="dlJson" class="dl" download>Download keypoints JSON</a>
+
+    <button id="btnDrive" class="good full" style="display:none; margin-top:10px;">
+      Save keypoints to Google Drive
+    </button>
+
+    <a id="dlWebm" class="dl" download>Download stick-figure video</a>
+    <pre id="debug"></pre>
   </div>
 
-  <div id="status">Idle</div>
-  <div class="small" id="dbg"></div>
-</div>
+  <!-- TFJS + Pose Detection -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
 
-<script>
-  const video = document.getElementById("video");
-  const canvas = document.getElementById("canvas");
-  const ctx = canvas.getContext("2d");
-  const startBtn = document.getElementById("startBtn");
-  const recordBtn = document.getElementById("recordBtn");
-  const stopBtn = document.getElementById("stopBtn");
-  const statusEl = document.getElementById("status");
-  const dbgEl = document.getElementById("dbg");
+  <script>
+  (async () => {
+    const btnStart  = document.getElementById('btnStart');
+    const btnSwitch = document.getElementById('btnSwitch');
+    const btnArm    = document.getElementById('btnArm');
+    const btnGo     = document.getElementById('btnGo');
+    const btnStop   = document.getElementById('btnStop');
 
-  let detector = null;
-  let recording = false;
-  let frameIndex = 0;
-  let poseFrames = [];
+    const vid = document.getElementById('vid');
+    const stage = document.getElementById('stage');
+    const pill = document.getElementById('pill');
+    const canvas = document.getElementById('viz');
+    const ctx = canvas.getContext('2d');
 
-  function setStatus(t){ statusEl.textContent = t; }
-  function setDbg(t){ dbgEl.textContent = t; }
+    const chkShowVideo = document.getElementById('chkShowVideo');
+    const chkRecordStick = document.getElementById('chkRecordStick');
 
-  function waitForVideo(timeoutMs=5000){
-    return new Promise((resolve, reject) => {
-      const t0 = Date.now();
-      (function tick(){
-        if (video.videoWidth > 0 && video.videoHeight > 0) return resolve();
-        if (Date.now() - t0 > timeoutMs) return reject(new Error("Video never produced dimensions"));
-        requestAnimationFrame(tick);
-      })();
-    });
-  }
+    const dlJson = document.getElementById('dlJson');
+    const dlWebm = document.getElementById('dlWebm');
+    const btnDrive = document.getElementById('btnDrive');
+    const debug = document.getElementById('debug');
 
-  function withTimeout(promise, ms, label){
-    return new Promise((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error(label + " (timeout)")), ms);
-      promise.then(v => { clearTimeout(t); resolve(v); })
-             .catch(e => { clearTimeout(t); reject(e); });
-    });
-  }
+    let stream = null;
+    let useRear = true;
+    let detector = null;
 
-  async function initBackend(){
-    // WASM path required for tfjs-backend-wasm
-    // (this tells TFJS where the .wasm binaries live)
-    tf.wasm.setWasmPaths("https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.9.0/dist/");
+    let raf = null;
+    let capturing = false;
+    let armed = false;
 
-    // Try WebGL quickly; if it hangs, fall back to WASM.
-    setStatus("Initializing TF backend (WebGL) …");
-    try {
-      await withTimeout(tf.setBackend("webgl"), 2000, "tf.setBackend(webgl)");
-      await withTimeout(tf.ready(), 2000, "tf.ready(webgl)");
-      setDbg("Backend: webgl");
-      return "webgl";
-    } catch (e) {
-      console.warn("WebGL backend failed/hung, switching to WASM:", e);
-      setStatus("WebGL stuck → switching to WASM …");
-      await tf.setBackend("wasm");
+    // Stored results (privacy-safe)
+    let frames = []; // each: {t_ms, keypoints:[{name,x,y,score}], w,h}
+    let t0 = null;
+
+    // Optional stick-figure-only video recording (canvas stream)
+    let rec = null;
+    let recChunks = [];
+
+    // Share state
+    let lastJsonBlob = null;
+    let lastJsonName = null;
+
+    function setPill(text, bg='rgba(0,0,0,.55)'){ pill.textContent=text; pill.style.background=bg; }
+
+    async function loadModel() {
+      setPill('Loading MoveNet…');
       await tf.ready();
-      setDbg("Backend: wasm");
-      return "wasm";
+      try { await tf.setBackend('webgl'); } catch(e) {}
+      const model = poseDetection.SupportedModels.MoveNet;
+      const cfg = {
+        modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
+        enableSmoothing: true
+      };
+      detector = await poseDetection.createDetector(model, cfg);
+      setPill('Model ready', 'rgba(30,142,62,.85)');
     }
-  }
 
-  async function loadMoveNet(){
-    // Pose detector creation can hang on iOS if backend is unhappy; guard it.
-    setStatus("Loading pose model…");
-    detector = await withTimeout(
-      poseDetection.createDetector(
-        poseDetection.SupportedModels.MoveNet,
-        { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
-      ),
-      8000,
-      "createDetector(MoveNet)"
-    );
-    setStatus("Pose model ready.");
-  }
+    async function startCamera() {
+      // Stop old stream
+      if (stream) { stream.getTracks().forEach(t => t.stop()); stream=null; }
 
-  async function loop(){
-    if (!detector) return requestAnimationFrame(loop);
+      // Reset UI states
+      dlJson.style.display = 'none';
+      dlWebm.style.display = 'none';
+      btnDrive.style.display = 'none';
+      debug.style.display = 'none';
 
-    ctx.clearRect(0,0,canvas.width,canvas.height);
+      frames = [];
+      t0 = null;
+      armed = false;
+      capturing = false;
+      lastJsonBlob = null;
+      lastJsonName = null;
 
-    try {
-      const poses = await detector.estimatePoses(video, { maxPoses: 1 });
-      if (poses && poses.length){
-        const kps = poses[0].keypoints;
-
-        // Draw points (preview only)
-        ctx.fillStyle = "white";
-        for (const k of kps){
-          if (k.score > 0.4){
-            ctx.beginPath();
-            ctx.arc(k.x, k.y, 4, 0, Math.PI*2);
-            ctx.fill();
-          }
+      const constraints = {
+        audio: false,
+        video: {
+          facingMode: useRear ? { ideal: "environment" } : { ideal: "user" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
         }
+      };
 
-        // Save points ONLY when recording
-        if (recording){
-          poseFrames.push({
-            frame: frameIndex++,
-            time_ms: performance.now(),
-            keypoints: kps.map(k => ({
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      vid.srcObject = stream;
+      await vid.play();
+
+      stage.style.display = 'block';
+      btnSwitch.disabled = false;
+      btnArm.disabled = false;
+      btnGo.disabled = true;
+      btnStop.disabled = true;
+
+      setPill('SETUP: align body below neck + feet + tape', 'rgba(0,0,0,.55)');
+
+      resizeCanvas();
+      if (!detector) await loadModel();
+
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(loop);
+    }
+
+    function resizeCanvas() {
+      const vw = vid.videoWidth || 1280;
+      const vh = vid.videoHeight || 720;
+      canvas.width = vw;
+      canvas.height = vh;
+    }
+
+    function switchCamera() {
+      useRear = !useRear;
+      startCamera().catch(err => alert('Camera error: ' + err.message));
+    }
+
+    // Draw skeleton using MoveNet keypoint names
+    const EDGES = [
+      ['nose','left_eye'],['nose','right_eye'],['left_eye','left_ear'],['right_eye','right_ear'],
+      ['left_shoulder','right_shoulder'],
+      ['left_shoulder','left_elbow'],['left_elbow','left_wrist'],
+      ['right_shoulder','right_elbow'],['right_elbow','right_wrist'],
+      ['left_shoulder','left_hip'],['right_shoulder','right_hip'],
+      ['left_hip','right_hip'],
+      ['left_hip','left_knee'],['left_knee','left_ankle'],
+      ['right_hip','right_knee'],['right_knee','right_ankle']
+    ];
+
+    function kpMap(keypoints) {
+      const m = new Map();
+      for (const k of keypoints) m.set(k.name, k);
+      return m;
+    }
+
+    function drawStick(keypoints) {
+      const m = kpMap(keypoints);
+
+      // Clear
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+
+      // Optional preview video UNDER skeleton (still not saved)
+      if (chkShowVideo.checked) {
+        ctx.globalAlpha = 0.30;
+        ctx.drawImage(vid, 0, 0, canvas.width, canvas.height);
+        ctx.globalAlpha = 1.0;
+      }
+
+      // Dark background to emphasize privacy
+      if (!chkShowVideo.checked) {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+      }
+
+      // Visual tape guides (safe: synthetic overlay)
+      ctx.save();
+      ctx.strokeStyle = 'rgba(0,140,255,0.75)';
+      ctx.lineWidth = Math.max(3, Math.floor(canvas.width * 0.004));
+      ctx.beginPath();
+      ctx.moveTo(canvas.width*0.08, canvas.height*0.70);
+      ctx.lineTo(canvas.width*0.92, canvas.height*0.70);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(canvas.width*0.08, canvas.height*0.40);
+      ctx.lineTo(canvas.width*0.92, canvas.height*0.40);
+      ctx.stroke();
+      ctx.restore();
+
+      // Edges
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = Math.max(4, Math.floor(canvas.width * 0.006));
+      for (const [a,b] of EDGES) {
+        const A = m.get(a), B = m.get(b);
+        if (!A || !B) continue;
+        if ((A.score ?? 0) < 0.2 || (B.score ?? 0) < 0.2) continue;
+        ctx.beginPath();
+        ctx.moveTo(A.x, A.y);
+        ctx.lineTo(B.x, B.y);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // Joints (no pixels, only synthetic circles)
+      ctx.save();
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      const r = Math.max(3, Math.floor(canvas.width * 0.006));
+      for (const k of keypoints) {
+        if ((k.score ?? 0) < 0.2) continue;
+        ctx.beginPath();
+        ctx.arc(k.x, k.y, r, 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    function startStickRecording() {
+      recChunks = [];
+      const cs = canvas.captureStream(30);
+      const mimeTypes = ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'];
+      let chosen = '';
+      for (const mt of mimeTypes) if (MediaRecorder.isTypeSupported(mt)) { chosen = mt; break; }
+      rec = new MediaRecorder(cs, chosen ? { mimeType: chosen } : {});
+      rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) recChunks.push(e.data); };
+      rec.start(250);
+    }
+
+    function stopStickRecording() {
+      return new Promise((resolve) => {
+        if (!rec || rec.state === 'inactive') return resolve(null);
+        rec.onstop = () => {
+          const blob = new Blob(recChunks, { type: rec.mimeType || 'video/webm' });
+          resolve(blob);
+        };
+        rec.stop();
+      });
+    }
+
+    async function loop() {
+      if (canvas.width !== (vid.videoWidth||0) && (vid.videoWidth||0)>0) resizeCanvas();
+
+      let poses = [];
+      try {
+        poses = await detector.estimatePoses(vid, { maxPoses: 1, flipHorizontal: false });
+      } catch (e) {
+        setPill('Model error (refresh page)', 'rgba(179,38,30,.85)');
+        raf = requestAnimationFrame(loop);
+        return;
+      }
+
+      const pose = poses && poses[0];
+      if (pose && pose.keypoints) {
+        drawStick(pose.keypoints);
+
+        if (capturing) {
+          const now = performance.now();
+          if (t0 === null) t0 = now;
+          const t_ms = now - t0;
+
+          frames.push({
+            t_ms: Math.round(t_ms),
+            w: canvas.width,
+            h: canvas.height,
+            keypoints: pose.keypoints.map(k => ({
               name: k.name,
-              x: k.x,
-              y: k.y,
-              score: k.score
+              x: +k.x.toFixed(2),
+              y: +k.y.toFixed(2),
+              score: +(k.score ?? 0).toFixed(3)
             }))
           });
+
+          setPill(`CAPTURING… ${frames.length} frames`, 'rgba(179,38,30,.85)');
+        } else {
+          setPill(armed ? 'GREEN: ready to capture' : 'SETUP: align body + feet + tape',
+                  armed ? 'rgba(30,142,62,.85)' : 'rgba(0,0,0,.55)');
+        }
+      } else {
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        ctx.fillStyle = '#000'; ctx.fillRect(0,0,canvas.width,canvas.height);
+        setPill('No pose detected — adjust framing', 'rgba(0,0,0,.55)');
+      }
+
+      raf = requestAnimationFrame(loop);
+    }
+
+    async function shareFile(blob, filename) {
+      if (navigator.canShare && navigator.canShare({ files: [new File([blob], filename, { type: blob.type })] })) {
+        const file = new File([blob], filename, { type: blob.type });
+        await navigator.share({
+          title: 'ANVA TUG Keypoints',
+          text: 'ANVA TUG privacy-safe keypoints JSON (no video pixels saved).',
+          files: [file]
+        });
+        return true;
+      }
+      return false;
+    }
+
+    function makeAndExposeJSON() {
+      const ts = new Date();
+      const pad = n => String(n).padStart(2,'0');
+      const name = `ANVA_TUG_KEYPOINTS_${ts.getFullYear()}-${pad(ts.getMonth()+1)}-${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}.json`;
+
+      const payload = {
+        meta: {
+          app: "ANVA_TUG_PRIVACY_STICK",
+          created_local: ts.toISOString(),
+          note: "No camera pixels saved. Synthetic stick figure + keypoints only."
+        },
+        frames
+      };
+
+      const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+      lastJsonBlob = blob;
+      lastJsonName = name;
+
+      // Download link fallback
+      const url = URL.createObjectURL(blob);
+      dlJson.href = url;
+      dlJson.download = name;
+      dlJson.textContent = `Download JSON: ${name}`;
+      dlJson.style.display = 'block';
+
+      // Drive share button (share sheet)
+      btnDrive.style.display = 'block';
+
+      // Optional debug
+      debug.style.display = 'block';
+      debug.textContent = `Frames: ${frames.length}\nFirst t_ms: ${frames[0]?.t_ms ?? 'n/a'}\nLast t_ms: ${frames[frames.length-1]?.t_ms ?? 'n/a'}`;
+    }
+
+    // UI hooks
+    btnStart.addEventListener('click', () => startCamera().catch(err => alert('Camera error: ' + err.message)));
+    btnSwitch.addEventListener('click', switchCamera);
+
+    btnArm.addEventListener('click', () => {
+      armed = true;
+      btnGo.disabled = false;
+      setPill('GREEN: ready to capture', 'rgba(30,142,62,.85)');
+    });
+
+    btnGo.addEventListener('click', async () => {
+      if (!armed) return;
+
+      capturing = true;
+      btnGo.disabled = true;
+      btnArm.disabled = true;
+      btnStop.disabled = false;
+
+      dlJson.style.display = 'none';
+      dlWebm.style.display = 'none';
+      btnDrive.style.display = 'none';
+      debug.style.display = 'none';
+
+      frames = [];
+      t0 = null;
+      lastJsonBlob = null;
+      lastJsonName = null;
+
+      if (chkRecordStick.checked) startStickRecording();
+    });
+
+    btnStop.addEventListener('click', async () => {
+      capturing = false;
+      armed = false;
+
+      btnStop.disabled = true;
+      btnArm.disabled = false;
+      btnGo.disabled = true;
+
+      makeAndExposeJSON();
+      setPill('DONE: download or save to Drive', 'rgba(30,142,62,.85)');
+
+      if (chkRecordStick.checked) {
+        const blob = await stopStickRecording();
+        if (blob) {
+          const ts = new Date();
+          const pad = n => String(n).padStart(2,'0');
+          const name = `ANVA_TUG_STICK_${ts.getFullYear()}-${pad(ts.getMonth()+1)}-${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}.webm`;
+          const url = URL.createObjectURL(blob);
+          dlWebm.href = url;
+          dlWebm.download = name;
+          dlWebm.textContent = `Download Stick Video: ${name}`;
+          dlWebm.style.display = 'block';
         }
       }
-    } catch (e) {
-      // If estimatePoses fails, show it once and keep looping
-      setDbg("Pose error: " + (e?.message || e));
-    }
+    });
 
-    requestAnimationFrame(loop);
-  }
+    btnDrive.addEventListener('click', async () => {
+      if (!lastJsonBlob || !lastJsonName) {
+        alert('No JSON ready yet. Press Stop first.');
+        return;
+      }
+      try {
+        const ok = await shareFile(lastJsonBlob, lastJsonName);
+        if (!ok) {
+          alert('Share-to-Drive not supported on this browser. Use “Download JSON” then share from Files app.');
+        }
+      } catch (e) {
+        // User can cancel share sheet; not an error.
+        console.log(e);
+      }
+    });
 
-  startBtn.onclick = async () => {
-    try {
-      setStatus("Requesting camera…");
-      setDbg("");
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user" },
-        audio: false
-      });
-
-      video.srcObject = stream;
-      await video.play();
-
-      setStatus("Starting video…");
-      await waitForVideo(6000);
-
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-
-      // Backend first (with WASM fallback), then model
-      const backend = await initBackend();
-      setDbg("Backend: " + backend + " | Video: " + video.videoWidth + "x" + video.videoHeight);
-
-      await loadMoveNet();
-
-      recordBtn.disabled = false;
-      setStatus("Ready. Press Start TUG.");
-      requestAnimationFrame(loop);
-
-    } catch (e) {
-      console.error(e);
-      setStatus("Failed to start. Refresh and try again.");
-      setDbg(e?.message || String(e));
-    }
-  };
-
-  recordBtn.onclick = () => {
-    poseFrames = [];
-    frameIndex = 0;
-    recording = true;
-    recordBtn.disabled = true;
-    stopBtn.disabled = false;
-    setStatus("Recording pose points…");
-  };
-
-  stopBtn.onclick = () => {
-    recording = false;
-    stopBtn.disabled = true;
-    recordBtn.disabled = false;
-
-    const blob = new Blob(
-      [JSON.stringify({ fps: 30, frames: poseFrames }, null, 2)],
-      { type: "application/json" }
-    );
-
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "TUG_pose_only.json";
-    a.click();
-
-    setStatus("Saved: TUG_pose_only.json (privacy-safe)");
-  };
-</script>
+  })();
+  </script>
 </body>
 </html>
