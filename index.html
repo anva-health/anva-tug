@@ -2,685 +2,175 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>ANVA — TUG (Pose Only)</title>
-
-  <!-- TFJS + Pose Detection (MoveNet) -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.20.0/dist/tf-backend-webgl.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
+  <title>ANVA – Timed Up & Go</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <style>
-    :root{
-      --brand:#0b5ed7;
-      --ok:#198754;
-      --warn:#b02a37;
-      --bg:#f6f7f9;
-      --card:#ffffff;
-      --muted:#6c757d;
-    }
-    body{
-      margin:0; padding:16px;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      background:var(--bg); color:#111;
-      text-align:center;
-    }
-    h1{ margin: 8px 0 6px; color:var(--brand); font-size:28px; letter-spacing:.2px;}
-    .sub{ margin:0 0 12px; color:var(--muted); font-size:14px; }
-
-    .card{
-      max-width:560px;
-      margin:0 auto;
-      background:var(--card);
-      border-radius:16px;
-      padding:14px;
-      box-shadow:0 10px 30px rgba(0,0,0,.08);
-      text-align:left;
-    }
-    .hint{
-      font-size:13px; color:#1b1f23; line-height:1.35;
-      background:#f2f4f7; padding:10px 12px; border-radius:12px; margin-bottom:12px;
-    }
-    .hint b{ font-weight:800; }
-
-    #stage{
-      position:relative;
-      width:100%;
-      max-width:520px;
-      margin: 10px auto 6px;
-      border-radius:14px;
-      overflow:hidden;
-      background:#000;
-      aspect-ratio: 9 / 16;
-      z-index:1;
+    body {
+      font-family: Arial, sans-serif;
+      background: #f6f7f9;
+      text-align: center;
+      padding: 16px;
     }
 
-    /* Camera pixels are hidden by default */
-    video{
-      position:absolute; inset:0;
-      width:100%; height:100%;
-      object-fit:cover;
-      transform: scaleX(-1); /* mirror for usability */
-      opacity:0;
-      pointer-events:none;
+    h1 { color: #0b5ed7; }
+
+    #cameraBox {
+      position: relative;
+      width: 100%;
+      max-width: 420px;
+      margin: auto;
     }
 
-    /* FLOOR-ONLY mode: show bottom 45% only, tap enabled */
-    #video.floorOnly{
-      opacity:1;
-      clip-path: inset(55% 0 0 0);
-      pointer-events:auto;
+    video {
+      width: 100%;
+      border-radius: 10px;
     }
 
-    canvas{
-      position:absolute; inset:0;
-      width:100%; height:100%;
-      display:block;
-      background:#000;
+    /* Blue tape overlay */
+    #tapeLine {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 22%;
+      height: 6px;
+      background: #007bff;
+      opacity: 0.9;
+      cursor: pointer;
     }
 
-    #pill{
-      position:absolute; left:10px; top:10px;
-      padding:6px 10px;
-      border-radius:999px;
-      font-size:12px; font-weight:900;
-      background:#2b2f36; color:#fff;
-      z-index:5;
-      user-select:none;
+    /* Status banner */
+    #status {
+      margin-top: 12px;
+      padding: 10px;
+      border-radius: 8px;
+      font-weight: bold;
+      color: white;
+      background: #dc3545;
     }
 
-    .checks{
-      max-width:520px;
-      margin: 10px auto 0;
-      text-align:left;
-      font-size:14px;
-      color:#222;
-    }
-    .checks label{ display:flex; gap:10px; align-items:center; margin: 8px 0;}
-
-    .controls{
-      position:relative;
-      z-index:50; /* ensure buttons always receive taps */
-      max-width:520px;
-      margin: 10px auto 0;
-      text-align:center;
-    }
-    .row{
-      display:flex; gap:10px; justify-content:center; flex-wrap:wrap;
-      margin-top:10px;
-    }
-    button{
-      border:none;
-      border-radius:14px;
-      padding:12px 14px;
-      font-weight:900;
-      font-size:15px;
-      cursor:pointer;
-      min-width:160px;
-      transition: transform .05s ease;
-    }
-    button:active{ transform: scale(.99); }
-
-    button.primary{ background:var(--brand); color:#fff;}
-    button.good{ background:var(--ok); color:#fff;}
-    button.danger{ background:var(--warn); color:#fff;}
-    button.gray{ background:#9aa4ad; color:#fff;}
-    button:disabled{ opacity:.45; cursor:not-allowed; }
-
-    .status{
-      max-width:520px; margin:10px auto 0;
-      text-align:center;
-      font-weight:900;
-      color:#0f5132;
-      min-height: 20px;
+    #status.ready {
+      background: #198754;
     }
 
-    .smallnote{
-      max-width:520px; margin: 6px auto 0;
-      text-align:center;
-      font-size:12px;
-      color:#6c757d;
-      line-height:1.3;
+    button {
+      margin: 10px;
+      padding: 14px 18px;
+      font-size: 16px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    #startBtn { background: #0d6efd; color: white; }
+    #recordBtn { background: #198754; color: white; }
+    #stopBtn { background: #dc3545; color: white; }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
     }
   </style>
 </head>
 
 <body>
-  <h1>ANVA — TUG (Pose Only)</h1>
-  <p class="sub">Privacy mode: camera used only to extract pose. <b>No video/images are saved.</b></p>
 
-  <div class="card">
-    <div class="hint">
-      <b>Setup:</b> Frontal view. Full body <b>below neck</b> + feet visible. Blue tape visible on floor.<br/>
-      <b>Tape step:</b> Tap <b>Set Tape</b> → you will briefly see <b>floor-only</b> pixels → tap the tape → tape locks.
-    </div>
+<h1>ANVA – Timed Up & Go</h1>
 
-    <div id="stage">
-      <div id="pill">READY</div>
-      <video id="video" playsinline muted></video>
-      <canvas id="canvas"></canvas>
-    </div>
+<div id="cameraBox">
+  <video id="video" autoplay playsinline></video>
+  <div id="tapeLine" title="Tap the blue tape to confirm alignment"></div>
+</div>
 
-    <div class="checks">
-      <label>
-        <input id="chkLiveUnder" type="checkbox" />
-        Show live video under stick figure (preview only)
-      </label>
-      <label>
-        <input id="chkWebm" type="checkbox" checked />
-        Record stick-figure-only video (no pixels) as WebM
-      </label>
-    </div>
+<div id="status">🔴 Align camera and TAP the blue tape</div>
 
-    <div class="controls">
-      <div class="row">
-        <button id="btnStartCam" class="primary">Start Camera</button>
-        <button id="btnSwitchCam" class="gray">Switch Camera</button>
-      </div>
-
-      <div class="row">
-        <button id="btnSetTape" class="good" disabled>Set Tape</button>
-        <button id="btnStartTug" class="danger" disabled>Start TUG</button>
-      </div>
-
-      <div class="row">
-        <button id="btnStop" class="gray" disabled>Stop</button>
-      </div>
-    </div>
-
-    <div id="status" class="status">Libraries loading…</div>
-    <div class="smallnote">
-      Output: keypoints JSON (always) + optional stick-video WebM. Camera pixels are never saved.
-    </div>
-  </div>
+<div>
+  <button id="startBtn">Start Camera</button>
+  <button id="recordBtn" disabled>Record TUG</button>
+  <button id="stopBtn" disabled>Stop</button>
+</div>
 
 <script>
-(() => {
-  // -----------------------------
-  // Globals / State
-  // -----------------------------
   const video = document.getElementById("video");
-  const canvas = document.getElementById("canvas");
-  const ctx = canvas.getContext("2d");
+  const tapeLine = document.getElementById("tapeLine");
+  const status = document.getElementById("status");
 
-  const btnStartCam = document.getElementById("btnStartCam");
-  const btnSwitchCam = document.getElementById("btnSwitchCam");
-  const btnSetTape = document.getElementById("btnSetTape");
-  const btnStartTug = document.getElementById("btnStartTug");
-  const btnStop = document.getElementById("btnStop");
+  const startBtn = document.getElementById("startBtn");
+  const recordBtn = document.getElementById("recordBtn");
+  const stopBtn = document.getElementById("stopBtn");
 
-  const chkLiveUnder = document.getElementById("chkLiveUnder");
-  const chkWebm = document.getElementById("chkWebm");
-
-  let detector = null;
   let stream = null;
-  let facingMode = "environment"; // default back camera
-  let rafId = null;
+  let recorder = null;
+  let chunks = [];
+  let tapeConfirmed = false;
 
-  let tapeLocked = false;
-  let tapeYNorm = null; // 0..1 (y position in video frame)
-  let isCalibratingTape = false;
-
-  let isCapturing = false;
-  let captureFrames = [];
-  let captureStartPerf = null;
-
-  let mediaRecorder = null;
-  let recordedChunks = [];
-
-  // -----------------------------
-  // UI helpers
-  // -----------------------------
-  function setStatus(msg, ok=true) {
-    const el = document.getElementById("status");
-    el.style.color = ok ? "#0f5132" : "#842029";
-    el.textContent = msg;
-  }
-  function setPill(text) {
-    const pill = document.getElementById("pill");
-    pill.textContent = text;
-    pill.style.background =
-      (text === "READY") ? "#2b2f36" :
-      (text === "WAIT") ? "#8a5a00" :
-      (text === "TAPE") ? "#146c43" :
-      (text === "RECORDING") ? "#b02a37" : "#2b2f36";
-  }
-  function setActive(btn, on) {
-    if (!btn) return;
-    btn.style.boxShadow = on ? "0 0 0 4px rgba(176,42,55,.25)" : "";
-    btn.style.filter = on ? "brightness(1.03)" : "";
-  }
-  function resizeCanvasToVideo() {
-    const w = video.videoWidth || 720;
-    const h = video.videoHeight || 1280;
-    canvas.width = w;
-    canvas.height = h;
-  }
-
-  // -----------------------------
-  // Download helper (iOS safe)
-  // -----------------------------
-  function downloadBlob(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1500);
-  }
-
-  // -----------------------------
-  // Pose drawing (MoveNet)
-  // -----------------------------
-  const EDGES = [
-    ["left_shoulder","right_shoulder"],
-    ["left_shoulder","left_hip"],
-    ["right_shoulder","right_hip"],
-    ["left_hip","right_hip"],
-    ["left_shoulder","left_elbow"],
-    ["left_elbow","left_wrist"],
-    ["right_shoulder","right_elbow"],
-    ["right_elbow","right_wrist"],
-    ["left_hip","left_knee"],
-    ["left_knee","left_ankle"],
-    ["right_hip","right_knee"],
-    ["right_knee","right_ankle"],
-  ];
-
-  function kpByName(keypoints) {
-    const m = {};
-    for (const k of keypoints) m[k.name] = k;
-    return m;
-  }
-
-  function drawStick(keypoints) {
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-
-    // If user wants live underlay, draw it (preview-only) otherwise keep black
-    if (chkLiveUnder.checked && stream && !isCalibratingTape) {
-      try { ctx.drawImage(video, 0, 0, canvas.width, canvas.height); } catch(e){}
-      // darken so stick pops but still visible
-      ctx.fillStyle = "rgba(0,0,0,.55)";
-      ctx.fillRect(0,0,canvas.width,canvas.height);
-    }
-
-    // draw edges
-    const m = kpByName(keypoints);
-    ctx.lineWidth = Math.max(3, canvas.width * 0.004);
-    ctx.strokeStyle = "#37ff8b";
-    ctx.beginPath();
-    for (const [a,b] of EDGES) {
-      if (!m[a] || !m[b]) continue;
-      if ((m[a].score ?? 0) < 0.35) continue;
-      if ((m[b].score ?? 0) < 0.35) continue;
-      ctx.moveTo(m[a].x, m[a].y);
-      ctx.lineTo(m[b].x, m[b].y);
-    }
-    ctx.stroke();
-
-    // draw joints
-    ctx.fillStyle = "#37ff8b";
-    for (const k of keypoints) {
-      if ((k.score ?? 0) < 0.35) continue;
-      ctx.beginPath();
-      ctx.arc(k.x, k.y, Math.max(4, canvas.width * 0.006), 0, Math.PI*2);
-      ctx.fill();
+  function updateStatus(ready) {
+    if (ready) {
+      status.textContent = "🟢 Ready – You may record";
+      status.classList.add("ready");
+      recordBtn.disabled = false;
+    } else {
+      status.textContent = "🔴 Align camera and TAP the blue tape";
+      status.classList.remove("ready");
+      recordBtn.disabled = true;
     }
   }
 
-  // -----------------------------
-  // Frame capture (JSON)
-  // -----------------------------
-  function pushFrame(keypoints) {
-    if (!isCapturing) return;
+  // Start camera (rear camera enforced)
+  startBtn.onclick = async () => {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" } },
+      audio: false
+    });
 
-    const now = performance.now();
-    const t_ms = Math.round((now - captureStartPerf));
-
-    const frame = {
-      t_ms,
-      w: canvas.width,
-      h: canvas.height,
-      keypoints: keypoints.map(k => ({
-        name: k.name,
-        x: Number(k.x.toFixed(3)),
-        y: Number(k.y.toFixed(3)),
-        score: Number((k.score ?? 0).toFixed(3))
-      }))
-    };
-    captureFrames.push(frame);
-  }
-
-  // -----------------------------
-  // Main loop
-  // -----------------------------
-  async function loop() {
-    rafId = requestAnimationFrame(loop);
-
-    if (!detector || !stream) {
-      setPill("READY");
-      return;
-    }
-
-    // If calibrating, do not run heavy pose loop (still can, but keep simple)
-    if (isCalibratingTape) {
-      setPill("WAIT");
-      // keep canvas black while tape video is shown
-      ctx.clearRect(0,0,canvas.width,canvas.height);
-      return;
-    }
-
-    let poses = [];
-    try {
-      poses = await detector.estimatePoses(video, {maxPoses: 1, flipHorizontal: true});
-    } catch (e) {
-      // detector sometimes throws when camera just started
-      setPill("WAIT");
-      return;
-    }
-
-    if (!poses || poses.length === 0 || !poses[0].keypoints) {
-      setPill(isCapturing ? "RECORDING" : (tapeLocked ? "TAPE" : "WAIT"));
-      ctx.clearRect(0,0,canvas.width,canvas.height);
-      return;
-    }
-
-    const keypoints = poses[0].keypoints;
-    drawStick(keypoints);
-    pushFrame(keypoints);
-
-    setPill(isCapturing ? "RECORDING" : (tapeLocked ? "TAPE" : "WAIT"));
-  }
-
-  // -----------------------------
-  // Camera
-  // -----------------------------
-  async function startCamera() {
-    // Stop any existing
-    stopCameraTracks();
-
-    setStatus("Starting camera…");
-    setPill("WAIT");
-
-    const constraints = {
-      audio: false,
-      video: {
-        facingMode: { ideal: facingMode },
-        width: { ideal: 720 },
-        height: { ideal: 1280 }
-      }
-    };
-
-    stream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = stream;
+    tapeConfirmed = false;
+    updateStatus(false);
+  };
 
-    // iOS Safari needs play() from user gesture (button click => OK)
-    await video.play();
+  // Tap blue tape
+  tapeLine.onclick = () => {
+    tapeConfirmed = true;
+    updateStatus(true);
+  };
 
-    resizeCanvasToVideo();
+  // Record
+  recordBtn.onclick = () => {
+    if (!tapeConfirmed) return;
 
-    btnSetTape.disabled = false;
-    setStatus("Camera started. Tap Set Tape to calibrate floor tape.");
-  }
+    chunks = [];
+    recorder = new MediaRecorder(stream, { mimeType: "video/webm" });
 
-  function stopCameraTracks() {
-    try {
-      if (stream) stream.getTracks().forEach(t => t.stop());
-    } catch(e){}
-    stream = null;
-    video.srcObject = null;
-  }
+    recorder.ondataavailable = e => chunks.push(e.data);
 
-  // -----------------------------
-  // Tape calibration (floor-only pixels)
-  // -----------------------------
-  function enterTapeCalibration() {
-    if (!stream) {
-      setStatus("Start Camera first.", false);
-      return;
-    }
+    recorder.onstop = () => {
+      const blob = new Blob(chunks, { type: "video/webm" });
+      const url = URL.createObjectURL(blob);
 
-    isCalibratingTape = true;
-    tapeLocked = false;
-    tapeYNorm = null;
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "ANVA_TUG.webm";
+      a.click();
 
-    // show floor only
-    video.classList.add("floorOnly");
-
-    btnStartTug.disabled = true;
-    setActive(btnStop, false);
-    setStatus("Floor-only preview shown. Tap directly on the blue tape line.");
-  }
-
-  function exitTapeCalibrationLocked() {
-    isCalibratingTape = false;
-    video.classList.remove("floorOnly");
-
-    tapeLocked = true;
-
-    btnStartTug.disabled = false;
-    setStatus("Tape locked ✅ Now press Start TUG.");
-  }
-
-  function handleVideoTapForTape(ev) {
-    if (!isCalibratingTape) return;
-
-    // Compute click y relative to video element displayed on page
-    const rect = video.getBoundingClientRect();
-    const clickY = ev.clientY - rect.top;
-
-    // Normalize within the displayed video
-    let yNorm = clickY / rect.height;
-    yNorm = Math.max(0, Math.min(1, yNorm));
-
-    // Store
-    tapeYNorm = Number(yNorm.toFixed(6));
-    exitTapeCalibrationLocked();
-  }
-
-  // -----------------------------
-  // Recording stick video (canvas)
-  // -----------------------------
-  function startStickRecordingIfEnabled() {
-    recordedChunks = [];
-    mediaRecorder = null;
-
-    if (!chkWebm.checked) return;
-
-    const fps = 15;
-    const cstream = canvas.captureStream(fps);
-
-    let mime = "video/webm;codecs=vp8";
-    if (!MediaRecorder.isTypeSupported(mime)) {
-      mime = "video/webm";
-    }
-
-    try {
-      mediaRecorder = new MediaRecorder(cstream, { mimeType: mime });
-    } catch(e) {
-      console.warn("MediaRecorder init failed:", e);
-      mediaRecorder = null;
-      return;
-    }
-
-    mediaRecorder.ondataavailable = (ev) => {
-      if (ev.data && ev.data.size > 0) recordedChunks.push(ev.data);
+      URL.revokeObjectURL(url);
     };
 
-    mediaRecorder.onstop = () => {
-      try {
-        const blob = new Blob(recordedChunks, { type: "video/webm" });
-        const ts = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
-        downloadBlob(blob, `ANVA_TUG_STICK_${ts}.webm`);
-      } catch(e) {
-        console.warn("webm download failed:", e);
-      }
-    };
+    recorder.start();
+    recordBtn.disabled = true;
+    stopBtn.disabled = false;
+    status.textContent = "🔴 Recording…";
+    status.classList.remove("ready");
+  };
 
-    mediaRecorder.start();
-  }
-
-  // -----------------------------
-  // Start/Stop TUG Capture
-  // -----------------------------
-  function startTugCapture() {
-    if (!stream) {
-      setStatus("Start Camera first.", false);
-      return;
-    }
-    if (!tapeLocked || tapeYNorm === null) {
-      setStatus("Set Tape first (tap the blue tape during floor preview).", false);
-      return;
-    }
-    if (isCalibratingTape) {
-      setStatus("Finish tape calibration first.", false);
-      return;
-    }
-
-    isCapturing = true;
-    captureFrames = [];
-    captureStartPerf = performance.now();
-
-    // UI
-    btnStartTug.disabled = true;
-    btnSetTape.disabled = true;
-    btnStop.disabled = false;
-    setActive(btnStop, true);
-    setPill("RECORDING");
-    setStatus("Recording… press Stop to finish and download JSON.");
-
-    startStickRecordingIfEnabled();
-  }
-
-  function stopTugCaptureAndDownload() {
-    // Always safe to call
-    isCapturing = false;
-
-    // Stop stick recorder if exists
-    try {
-      if (mediaRecorder && mediaRecorder.state !== "inactive") {
-        mediaRecorder.stop();
-      }
-    } catch(e){ console.warn(e); }
-
-    // Build JSON immediately (iOS friendly)
-    const ts = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
-    const payload = {
-      meta: {
-        created_utc_ms: Date.now(),
-        tape_y_norm: tapeYNorm,     // THIS is what Colab will use
-        note: "Pose-only. No camera pixels saved.",
-        facingMode
-      },
-      frames: captureFrames
-    };
-
-    const jsonBlob = new Blob([JSON.stringify(payload)], {type:"application/json"});
-    downloadBlob(jsonBlob, `ANVA_TUG_KEYPOINTS_${ts}.json`);
-
-    // UI reset
-    btnStartTug.disabled = false;   // allow another trial
-    btnSetTape.disabled = false;    // allow recalibration if needed
-    btnStop.disabled = true;
-    setActive(btnStop, false);
-    setPill(tapeLocked ? "TAPE" : "READY");
-    setStatus("Downloaded JSON ✅ (and WebM if enabled).");
-  }
-
-  // -----------------------------
-  // Init libraries
-  // -----------------------------
-  async function init() {
-    setStatus("Libraries loading…");
-
-    try {
-      await tf.setBackend("webgl");
-      await tf.ready();
-
-      const model = poseDetection.SupportedModels.MoveNet;
-      const detectorConfig = {
-        modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING
-      };
-      detector = await poseDetection.createDetector(model, detectorConfig);
-
-      setStatus("Model loaded. Tap Start Camera.");
-      setPill("READY");
-    } catch (e) {
-      console.error(e);
-      setStatus("Failed to load model. Refresh page and try again.", false);
-    }
-
-    // Start loop
-    if (!rafId) loop();
-  }
-
-  // -----------------------------
-  // Button wiring
-  // -----------------------------
-  btnStartCam.addEventListener("click", async (e) => {
-    e.preventDefault(); e.stopPropagation();
-    try { await startCamera(); }
-    catch(err){
-      console.error(err);
-      setStatus("Camera failed to start. Check Safari permissions.", false);
-      setPill("READY");
-    }
-  });
-
-  btnSwitchCam.addEventListener("click", async (e) => {
-    e.preventDefault(); e.stopPropagation();
-    facingMode = (facingMode === "environment") ? "user" : "environment";
-    tapeLocked = false;
-    tapeYNorm = null;
-    btnStartTug.disabled = true;
-    btnSetTape.disabled = true;
-    setStatus("Switching camera…");
-    try {
-      await startCamera();
-    } catch(err){
-      console.error(err);
-      setStatus("Could not switch camera.", false);
-    }
-  });
-
-  btnSetTape.addEventListener("click", (e) => {
-    e.preventDefault(); e.stopPropagation();
-    enterTapeCalibration();
-  });
-
-  btnStartTug.addEventListener("click", (e) => {
-    e.preventDefault(); e.stopPropagation();
-    startTugCapture();
-  });
-
-  btnStop.addEventListener("click", (e) => {
-    e.preventDefault(); e.stopPropagation();
-    stopTugCaptureAndDownload();
-  });
-
-  // Tap on video during calibration
-  video.addEventListener("click", (e) => {
-    // Only acts in calibration mode
-    handleVideoTapForTape(e);
-  });
-
-  // Live-underlay checkbox
-  chkLiveUnder.addEventListener("change", () => {
-    // This only affects canvas drawing; pixels still not saved
-  });
-
-  // Clean up if user leaves
-  window.addEventListener("beforeunload", () => {
-    try { if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop(); } catch(e){}
-    stopCameraTracks();
-    if (rafId) cancelAnimationFrame(rafId);
-  });
-
-  // Start
-  init();
-})();
+  // Stop
+  stopBtn.onclick = () => {
+    recorder.stop();
+    stopBtn.disabled = true;
+    recordBtn.disabled = false;
+    status.textContent = "🟢 Recording complete";
+    status.classList.add("ready");
+  };
 </script>
+
 </body>
 </html>
