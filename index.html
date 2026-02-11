@@ -2,175 +2,404 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>ANVA – Timed Up & Go</title>
+  <title>ANVA – TUG (Keypoints JSON)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #f6f7f9;
-      text-align: center;
-      padding: 16px;
+    body { font-family: Arial, sans-serif; background:#f6f7f9; text-align:center; padding:16px; }
+    h1 { color:#0b5ed7; margin: 8px 0 14px; }
+    #wrap { width:100%; max-width:420px; margin:0 auto; }
+    #stage { position:relative; width:100%; border-radius:12px; overflow:hidden; background:#111; }
+    video { width:100%; display:block; }
+    canvas { width:100%; display:block; }
+
+    #overlayUI { position:absolute; inset:0; pointer-events:none; }
+    #greenBox {
+      position:absolute; left:6%; right:6%; top:10%; bottom:12%;
+      border:4px solid rgba(25,135,84,0.95); border-radius:12px;
     }
-
-    h1 { color: #0b5ed7; }
-
-    #cameraBox {
-      position: relative;
-      width: 100%;
-      max-width: 420px;
-      margin: auto;
-    }
-
-    video {
-      width: 100%;
-      border-radius: 10px;
-    }
-
-    /* Blue tape overlay */
     #tapeLine {
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 22%;
-      height: 6px;
-      background: #007bff;
-      opacity: 0.9;
-      cursor: pointer;
+      position:absolute; left:0; right:0; bottom:22%;
+      height:8px; background:rgba(0,123,255,0.95);
+      box-shadow:0 0 10px rgba(0,123,255,0.6);
+      pointer-events:auto; cursor:pointer;
+    }
+    #tapeHint {
+      position:absolute; left:8px; bottom: calc(22% + 14px);
+      background: rgba(0,0,0,0.65); color:#fff;
+      padding:6px 10px; border-radius:10px; font-size:13px;
+      pointer-events:none;
     }
 
-    /* Status banner */
     #status {
-      margin-top: 12px;
-      padding: 10px;
-      border-radius: 8px;
-      font-weight: bold;
-      color: white;
-      background: #dc3545;
+      margin-top:12px; padding:10px; border-radius:10px;
+      font-weight:700; color:#fff; background:#dc3545;
     }
+    #status.ready { background:#198754; }
+    #status.rec { background:#ff8c00; color:#111; }
 
-    #status.ready {
-      background: #198754;
-    }
-
+    .row { margin-top:10px; }
     button {
-      margin: 10px;
-      padding: 14px 18px;
-      font-size: 16px;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
+      margin:6px; padding:14px 16px; font-size:16px;
+      border:none; border-radius:10px; cursor:pointer;
     }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    #startBtn { background:#0d6efd; color:#fff; }
+    #recordBtn { background:#198754; color:#fff; }
+    #stopBtn { background:#dc3545; color:#fff; }
 
-    #startBtn { background: #0d6efd; color: white; }
-    #recordBtn { background: #198754; color: white; }
-    #stopBtn { background: #dc3545; color: white; }
-
-    button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
+    #stats { margin-top:10px; font-size:14px; color:#222; }
+    .pill { display:inline-block; padding:4px 8px; border-radius:999px; background:#e9ecef; margin:0 4px; }
   </style>
 </head>
-
 <body>
+  <h1>ANVA – Timed Up &amp; Go</h1>
 
-<h1>ANVA – Timed Up & Go</h1>
+  <div id="wrap">
+    <div id="stage">
+      <!-- Camera preview shown only BEFORE tape tap -->
+      <video id="video" autoplay playsinline muted></video>
 
-<div id="cameraBox">
-  <video id="video" autoplay playsinline></video>
-  <div id="tapeLine" title="Tap the blue tape to confirm alignment"></div>
-</div>
+      <!-- Skeleton canvas (this is shown after tap) -->
+      <canvas id="out"></canvas>
 
-<div id="status">🔴 Align camera and TAP the blue tape</div>
+      <!-- UI overlays (NOT recorded; just guidance) -->
+      <div id="overlayUI">
+        <div id="greenBox"></div>
+        <div id="tapeHint">Tap the blue tape to switch to Skeleton Mode</div>
+        <div id="tapeLine" title="Tap the tape"></div>
+      </div>
+    </div>
 
-<div>
-  <button id="startBtn">Start Camera</button>
-  <button id="recordBtn" disabled>Record TUG</button>
-  <button id="stopBtn" disabled>Stop</button>
-</div>
+    <div id="status">🔴 Start camera, align, then TAP the blue tape</div>
 
-<script>
-  const video = document.getElementById("video");
-  const tapeLine = document.getElementById("tapeLine");
-  const status = document.getElementById("status");
+    <div class="row">
+      <button id="startBtn">Start Camera</button>
+    </div>
 
-  const startBtn = document.getElementById("startBtn");
-  const recordBtn = document.getElementById("recordBtn");
-  const stopBtn = document.getElementById("stopBtn");
+    <div class="row">
+      <button id="recordBtn" disabled>Record (JSON)</button>
+      <button id="stopBtn" disabled>Stop</button>
+    </div>
 
-  let stream = null;
-  let recorder = null;
-  let chunks = [];
-  let tapeConfirmed = false;
+    <div id="stats">
+      <span class="pill" id="pillMode">Mode: Align</span>
+      <span class="pill" id="pillFrames">Frames: 0</span>
+      <span class="pill" id="pillFps">FPS: –</span>
+    </div>
+  </div>
 
-  function updateStatus(ready) {
-    if (ready) {
-      status.textContent = "🟢 Ready – You may record";
-      status.classList.add("ready");
-      recordBtn.disabled = false;
-    } else {
-      status.textContent = "🔴 Align camera and TAP the blue tape";
-      status.classList.remove("ready");
-      recordBtn.disabled = true;
+  <!-- TFJS + MoveNet Pose Detection -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.22.0/dist/tf-core.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@4.22.0/dist/tf-converter.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.22.0/dist/tf-backend-webgl.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
+
+  <script>
+  (async () => {
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("out");
+    const ctx = canvas.getContext("2d");
+
+    const tapeLine = document.getElementById("tapeLine");
+    const status = document.getElementById("status");
+    const startBtn = document.getElementById("startBtn");
+    const recordBtn = document.getElementById("recordBtn");
+    const stopBtn = document.getElementById("stopBtn");
+
+    const pillMode = document.getElementById("pillMode");
+    const pillFrames = document.getElementById("pillFrames");
+    const pillFps = document.getElementById("pillFps");
+
+    // -------- State --------
+    let stream = null;
+    let detector = null;
+
+    let skeletonMode = false;
+    let tapeConfirmed = false;
+    let isRecording = false;
+
+    // JSON payload accumulator
+    let frames = []; // each: {t_ms, keypoints:[{i,name,x,y,score}], bbox?}
+    let recordStartMs = 0;
+
+    // FPS tracking
+    let lastFpsT = 0;
+    let fpsCount = 0;
+    let shownFps = 0;
+
+    function setStatus(text, mode) {
+      status.textContent = text;
+      status.classList.remove("ready", "rec");
+      if (mode) status.classList.add(mode);
     }
-  }
 
-  // Start camera (rear camera enforced)
-  startBtn.onclick = async () => {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: "environment" } },
-      audio: false
-    });
+    async function startCameraBack() {
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      stream = null;
 
-    video.srcObject = stream;
-    tapeConfirmed = false;
-    updateStatus(false);
-  };
+      tapeConfirmed = false;
+      skeletonMode = false;
+      isRecording = false;
 
-  // Tap blue tape
-  tapeLine.onclick = () => {
-    tapeConfirmed = true;
-    updateStatus(true);
-  };
+      recordBtn.disabled = true;
+      stopBtn.disabled = true;
 
-  // Record
-  recordBtn.onclick = () => {
-    if (!tapeConfirmed) return;
+      pillMode.textContent = "Mode: Align";
+      pillFrames.textContent = "Frames: 0";
+      pillFps.textContent = "FPS: –";
 
-    chunks = [];
-    recorder = new MediaRecorder(stream, { mimeType: "video/webm" });
+      frames = [];
 
-    recorder.ondataavailable = e => chunks.push(e.data);
+      setStatus("🟠 Starting camera…", "rec");
 
-    recorder.onstop = () => {
-      const blob = new Blob(chunks, { type: "video/webm" });
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false
+      });
+
+      video.srcObject = stream;
+
+      await new Promise(res => {
+        if (video.readyState >= 1) return res();
+        video.onloadedmetadata = () => res();
+      });
+
+      const vw = video.videoWidth || 720;
+      const vh = video.videoHeight || 1280;
+
+      canvas.width = vw;
+      canvas.height = vh;
+
+      // Show camera for alignment, clear canvas
+      video.style.display = "block";
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      setStatus("🔴 Align, then TAP the blue tape to enter Skeleton Mode");
+    }
+
+    async function initDetector() {
+      if (detector) return;
+      setStatus("🟠 Loading skeleton engine…", "rec");
+      await tf.setBackend("webgl");
+      await tf.ready();
+
+      detector = await poseDetection.createDetector(
+        poseDetection.SupportedModels.MoveNet,
+        {
+          modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
+          enableSmoothing: true
+        }
+      );
+    }
+
+    // MoveNet COCO-17 names (fixed order)
+    const KP_NAMES = [
+      "nose","left_eye","right_eye","left_ear","right_ear",
+      "left_shoulder","right_shoulder","left_elbow","right_elbow","left_wrist","right_wrist",
+      "left_hip","right_hip","left_knee","right_knee","left_ankle","right_ankle"
+    ];
+
+    // Skeleton edges (no head edges)
+    const EDGES = [
+      [5,6],[5,11],[6,12],[11,12],
+      [5,7],[7,9],[6,8],[8,10],
+      [11,13],[13,15],[12,14],[14,16]
+    ];
+
+    // We do NOT draw head points (privacy-by-design)
+    const HIDE = new Set([0,1,2,3,4]);
+
+    function drawSkeleton(pose, minScore = 0.35) {
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      if (!pose || !pose.keypoints) return;
+
+      // Lines
+      ctx.lineWidth = Math.max(3, Math.round(canvas.width / 200));
+      ctx.strokeStyle = "rgba(0, 255, 180, 0.95)";
+      for (const [a,b] of EDGES) {
+        const ka = pose.keypoints[a], kb = pose.keypoints[b];
+        if (!ka || !kb) continue;
+        if (HIDE.has(a) || HIDE.has(b)) continue;
+        if ((ka.score ?? 0) < minScore || (kb.score ?? 0) < minScore) continue;
+        ctx.beginPath();
+        ctx.moveTo(ka.x, ka.y);
+        ctx.lineTo(kb.x, kb.y);
+        ctx.stroke();
+      }
+
+      // Joints
+      ctx.fillStyle = "rgba(0, 200, 255, 0.95)";
+      const r = Math.max(4, Math.round(canvas.width / 90));
+      for (let i=0;i<pose.keypoints.length;i++){
+        if (HIDE.has(i)) continue;
+        const k = pose.keypoints[i];
+        if (!k) continue;
+        if ((k.score ?? 0) < minScore) continue;
+        ctx.beginPath();
+        ctx.arc(k.x, k.y, r, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+
+    function captureFrameToJSON(pose) {
+      const t_ms = Math.round(performance.now() - recordStartMs);
+
+      const kp = [];
+      if (pose && pose.keypoints) {
+        for (let i=0;i<pose.keypoints.length;i++){
+          const k = pose.keypoints[i];
+          kp.push({
+            i,
+            name: KP_NAMES[i],
+            x: k?.x ?? null,
+            y: k?.y ?? null,
+            score: (typeof k?.score === "number") ? +k.score.toFixed(4) : null
+          });
+        }
+      } else {
+        // Keep frame timing even if a pose was missed
+        for (let i=0;i<KP_NAMES.length;i++){
+          kp.push({ i, name: KP_NAMES[i], x:null, y:null, score:null });
+        }
+      }
+
+      frames.push({ t_ms, keypoints: kp });
+      pillFrames.textContent = `Frames: ${frames.length}`;
+    }
+
+    // Loop: estimate poses in skeleton mode
+    let lastInfer = 0;
+    async function loop() {
+      if (!skeletonMode) return;
+
+      // throttle for iPhone stability
+      const now = performance.now();
+      const minIntervalMs = 80; // ~12.5 fps inference
+      if (now - lastInfer < minIntervalMs) {
+        requestAnimationFrame(loop);
+        return;
+      }
+      lastInfer = now;
+
+      // FPS display
+      if (!lastFpsT) lastFpsT = now;
+      fpsCount++;
+      if (now - lastFpsT > 1000) {
+        shownFps = fpsCount;
+        fpsCount = 0;
+        lastFpsT = now;
+        pillFps.textContent = `FPS: ${shownFps}`;
+      }
+
+      let pose = null;
+      try {
+        const poses = await detector.estimatePoses(video, { maxPoses: 1, flipHorizontal: false });
+        pose = (poses && poses[0]) ? poses[0] : null;
+      } catch (e) {
+        pose = null;
+      }
+
+      drawSkeleton(pose);
+
+      if (isRecording) {
+        captureFrameToJSON(pose);
+      }
+
+      requestAnimationFrame(loop);
+    }
+
+    function downloadJSON(payloadObj) {
+      const blob = new Blob([JSON.stringify(payloadObj, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
-
       const a = document.createElement("a");
       a.href = url;
-      a.download = "ANVA_TUG.webm";
+      a.download = payloadObj.meta?.filename || "ANVA_TUG_KEYPOINTS.json";
+      document.body.appendChild(a);
       a.click();
-
+      a.remove();
       URL.revokeObjectURL(url);
-    };
+    }
 
-    recorder.start();
-    recordBtn.disabled = true;
-    stopBtn.disabled = false;
-    status.textContent = "🔴 Recording…";
-    status.classList.remove("ready");
-  };
+    // -------- UI actions --------
+    startBtn.addEventListener("click", async () => {
+      try {
+        await startCameraBack();
+      } catch (e) {
+        console.error(e);
+        setStatus("🔴 Camera error. Check iPhone permissions for Camera.");
+      }
+    });
 
-  // Stop
-  stopBtn.onclick = () => {
-    recorder.stop();
-    stopBtn.disabled = true;
-    recordBtn.disabled = false;
-    status.textContent = "🟢 Recording complete";
-    status.classList.add("ready");
-  };
-</script>
+    tapeLine.addEventListener("click", async () => {
+      if (!stream) return;
 
+      tapeConfirmed = true;
+      await initDetector();
+
+      skeletonMode = true;
+      video.style.display = "none"; // hide camera pixels
+      pillMode.textContent = "Mode: Skeleton";
+
+      setStatus("🟢 Skeleton Mode – press Record (JSON)", "ready");
+      recordBtn.disabled = false;
+
+      // start loop
+      lastInfer = 0;
+      lastFpsT = 0;
+      fpsCount = 0;
+      requestAnimationFrame(loop);
+    });
+
+    recordBtn.addEventListener("click", () => {
+      if (!stream || !tapeConfirmed || !skeletonMode) return;
+
+      frames = [];
+      pillFrames.textContent = "Frames: 0";
+
+      isRecording = true;
+      recordStartMs = performance.now();
+
+      recordBtn.disabled = true;
+      stopBtn.disabled = false;
+      setStatus("🟠 Recording keypoints… press Stop", "rec");
+    });
+
+    stopBtn.addEventListener("click", () => {
+      if (!isRecording) return;
+
+      isRecording = false;
+      stopBtn.disabled = true;
+      recordBtn.disabled = false;
+      setStatus("🟢 Recording stopped – downloading JSON", "ready");
+
+      // Build payload
+      const payload = {
+        meta: {
+          app: "ANVA_TUG",
+          output: "movenet_keypoints_json",
+          keypoint_format: "COCO_17",
+          created_iso: new Date().toISOString(),
+          filename: `ANVA_TUG_KEYPOINTS_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.json`,
+          video: {
+            width: canvas.width,
+            height: canvas.height
+          },
+          inference: {
+            model: "MoveNet.SinglePose.Lightning",
+            smoothing: true,
+            throttle_ms: 80
+          }
+        },
+        frames
+      };
+
+      downloadJSON(payload);
+    });
+
+  })();
+  </script>
 </body>
 </html>
