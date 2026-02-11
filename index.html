@@ -2,67 +2,114 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>ANVA – TUG (Keypoints JSON)</title>
+  <title>ANVA – TUG (Skeleton + JSON)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
   <style>
     body { font-family: Arial, sans-serif; background:#f6f7f9; text-align:center; padding:16px; }
     h1 { color:#0b5ed7; margin: 8px 0 14px; }
     #wrap { width:100%; max-width:420px; margin:0 auto; }
-    #stage { position:relative; width:100%; border-radius:12px; overflow:hidden; background:#111; }
-    video { width:100%; display:block; }
-    canvas { width:100%; display:block; }
 
+    /* ONE viewport: video + canvas overlap here */
+    #stage{
+      position:relative;
+      width:100%;
+      aspect-ratio: 9 / 16;   /* consistent phone-like viewport */
+      border-radius:12px;
+      overflow:hidden;
+      background:#111;
+    }
+
+    /* IMPORTANT: overlap, not stack */
+    video, canvas{
+      position:absolute;
+      inset:0;
+      width:100%;
+      height:100%;
+      object-fit: cover;      /* fill like a camera view */
+      display:block;
+    }
+
+    /* UI overlays (not recorded) */
     #overlayUI { position:absolute; inset:0; pointer-events:none; }
-    #greenBox {
-      position:absolute; left:6%; right:6%; top:10%; bottom:12%;
-      border:4px solid rgba(25,135,84,0.95); border-radius:12px;
+
+    /* Green setup guide */
+    #greenBox{
+      position:absolute;
+      left:6%; right:6%;
+      top:8%; bottom:8%;
+      border:4px solid rgba(25,135,84,0.95);
+      border-radius:12px;
+      box-shadow: 0 0 0 9999px rgba(0,0,0,0.08) inset;
     }
-    #tapeLine {
-      position:absolute; left:0; right:0; bottom:22%;
-      height:8px; background:rgba(0,123,255,0.95);
-      box-shadow:0 0 10px rgba(0,123,255,0.6);
-      pointer-events:auto; cursor:pointer;
+
+    /* Blue tape overlay — ALWAYS on the viewport */
+    #tapeLine{
+      position:absolute;
+      left:0; right:0;
+      bottom:22%;
+      height:8px;
+      background: rgba(0,123,255,0.95);
+      box-shadow: 0 0 10px rgba(0,123,255,0.55);
+      pointer-events:auto; /* clickable */
+      cursor:pointer;
     }
-    #tapeHint {
-      position:absolute; left:8px; bottom: calc(22% + 14px);
-      background: rgba(0,0,0,0.65); color:#fff;
-      padding:6px 10px; border-radius:10px; font-size:13px;
+
+    #tapeHint{
+      position:absolute;
+      left:10px;
+      bottom: calc(22% + 16px);
+      background: rgba(0,0,0,0.65);
+      color:#fff;
+      padding:6px 10px;
+      border-radius:10px;
+      font-size:13px;
       pointer-events:none;
     }
 
-    #status {
-      margin-top:12px; padding:10px; border-radius:10px;
-      font-weight:700; color:#fff; background:#dc3545;
+    #status{
+      margin-top:12px;
+      padding:10px;
+      border-radius:10px;
+      font-weight:700;
+      color:#fff;
+      background:#dc3545;
     }
     #status.ready { background:#198754; }
     #status.rec { background:#ff8c00; color:#111; }
 
-    .row { margin-top:10px; }
-    button {
-      margin:6px; padding:14px 16px; font-size:16px;
-      border:none; border-radius:10px; cursor:pointer;
+    .row{ margin-top:10px; }
+    button{
+      margin:6px;
+      padding:14px 16px;
+      font-size:16px;
+      border:none;
+      border-radius:10px;
+      cursor:pointer;
     }
-    button:disabled { opacity:.5; cursor:not-allowed; }
-    #startBtn { background:#0d6efd; color:#fff; }
-    #recordBtn { background:#198754; color:#fff; }
-    #stopBtn { background:#dc3545; color:#fff; }
+    button:disabled{ opacity:0.5; cursor:not-allowed; }
+    #startBtn{ background:#0d6efd; color:#fff; }
+    #recordBtn{ background:#198754; color:#fff; }
+    #stopBtn{ background:#dc3545; color:#fff; }
 
     #stats { margin-top:10px; font-size:14px; color:#222; }
     .pill { display:inline-block; padding:4px 8px; border-radius:999px; background:#e9ecef; margin:0 4px; }
+
   </style>
 </head>
+
 <body>
   <h1>ANVA – Timed Up &amp; Go</h1>
 
   <div id="wrap">
     <div id="stage">
-      <!-- Camera preview shown only BEFORE tape tap -->
+      <!-- Camera preview (alignment mode only; never saved) -->
       <video id="video" autoplay playsinline muted></video>
 
-      <!-- Skeleton canvas (this is shown after tap) -->
+      <!-- Skeleton canvas (skeleton mode; never saved as video; only for display) -->
       <canvas id="out"></canvas>
 
-      <!-- UI overlays (NOT recorded; just guidance) -->
+      <!-- Overlays (NOT recorded) -->
       <div id="overlayUI">
         <div id="greenBox"></div>
         <div id="tapeHint">Tap the blue tape to switch to Skeleton Mode</div>
@@ -85,6 +132,7 @@
       <span class="pill" id="pillMode">Mode: Align</span>
       <span class="pill" id="pillFrames">Frames: 0</span>
       <span class="pill" id="pillFps">FPS: –</span>
+      <span class="pill" id="pillTape">Tape y_norm: –</span>
     </div>
   </div>
 
@@ -109,8 +157,14 @@
     const pillMode = document.getElementById("pillMode");
     const pillFrames = document.getElementById("pillFrames");
     const pillFps = document.getElementById("pillFps");
+    const pillTape = document.getElementById("pillTape");
 
-    // -------- State --------
+    // ---- Fixed tape overlay position ----
+    // CSS: bottom: 22% => y_norm from TOP = 1 - 0.22 = 0.78
+    const TAPE_BOTTOM_FRAC = 0.22;
+    const TAPE_Y_NORM_FIXED = 1.0 - TAPE_BOTTOM_FRAC;  // 0.78
+
+    // ---- State ----
     let stream = null;
     let detector = null;
 
@@ -118,15 +172,14 @@
     let tapeConfirmed = false;
     let isRecording = false;
 
-    // JSON payload accumulator
-    let frames = []; // each: {t_ms, keypoints:[{i,name,x,y,score}], bbox?}
+    let frames = [];            // JSON frames
     let recordStartMs = 0;
 
-    // FPS tracking
+    // FPS display
     let lastFpsT = 0;
     let fpsCount = 0;
-    let shownFps = 0;
 
+    // ---- Helpers ----
     function setStatus(text, mode) {
       status.textContent = text;
       status.classList.remove("ready", "rec");
@@ -140,15 +193,18 @@
       tapeConfirmed = false;
       skeletonMode = false;
       isRecording = false;
+      frames = [];
+      pillFrames.textContent = "Frames: 0";
+      pillFps.textContent = "FPS: –";
+      pillTape.textContent = "Tape y_norm: –";
+      pillMode.textContent = "Mode: Align";
 
       recordBtn.disabled = true;
       stopBtn.disabled = true;
 
-      pillMode.textContent = "Mode: Align";
-      pillFrames.textContent = "Frames: 0";
-      pillFps.textContent = "FPS: –";
-
-      frames = [];
+      // SHOW camera, HIDE skeleton canvas (alignment mode)
+      video.style.display = "block";
+      canvas.style.display = "none";
 
       setStatus("🟠 Starting camera…", "rec");
 
@@ -164,16 +220,11 @@
         video.onloadedmetadata = () => res();
       });
 
+      // Match canvas resolution to the camera's intrinsic resolution
       const vw = video.videoWidth || 720;
       const vh = video.videoHeight || 1280;
-
       canvas.width = vw;
       canvas.height = vh;
-
-      // Show camera for alignment, clear canvas
-      video.style.display = "block";
-      ctx.fillStyle = "#000";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       setStatus("🔴 Align, then TAP the blue tape to enter Skeleton Mode");
     }
@@ -193,24 +244,22 @@
       );
     }
 
-    // MoveNet COCO-17 names (fixed order)
+    // COCO-17 keypoint names in fixed MoveNet order
     const KP_NAMES = [
       "nose","left_eye","right_eye","left_ear","right_ear",
       "left_shoulder","right_shoulder","left_elbow","right_elbow","left_wrist","right_wrist",
       "left_hip","right_hip","left_knee","right_knee","left_ankle","right_ankle"
     ];
 
-    // Skeleton edges (no head edges)
+    // Edges (omit head)
     const EDGES = [
       [5,6],[5,11],[6,12],[11,12],
       [5,7],[7,9],[6,8],[8,10],
       [11,13],[13,15],[12,14],[14,16]
     ];
+    const HIDE = new Set([0,1,2,3,4]); // do not draw head points
 
-    // We do NOT draw head points (privacy-by-design)
-    const HIDE = new Set([0,1,2,3,4]);
-
-    function drawSkeleton(pose, minScore = 0.35) {
+    function drawSkeleton(pose, minScore=0.35) {
       ctx.fillStyle = "#000";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -233,7 +282,7 @@
       // Joints
       ctx.fillStyle = "rgba(0, 200, 255, 0.95)";
       const r = Math.max(4, Math.round(canvas.width / 90));
-      for (let i=0;i<pose.keypoints.length;i++){
+      for (let i=0;i<pose.keypoints.length;i++) {
         if (HIDE.has(i)) continue;
         const k = pose.keypoints[i];
         if (!k) continue;
@@ -249,66 +298,24 @@
 
       const kp = [];
       if (pose && pose.keypoints) {
-        for (let i=0;i<pose.keypoints.length;i++){
+        for (let i=0;i<pose.keypoints.length;i++) {
           const k = pose.keypoints[i];
           kp.push({
             i,
             name: KP_NAMES[i],
-            x: k?.x ?? null,
-            y: k?.y ?? null,
-            score: (typeof k?.score === "number") ? +k.score.toFixed(4) : null
+            x: (k && typeof k.x === "number") ? +k.x.toFixed(3) : null,
+            y: (k && typeof k.y === "number") ? +k.y.toFixed(3) : null,
+            score: (k && typeof k.score === "number") ? +k.score.toFixed(4) : null
           });
         }
       } else {
-        // Keep frame timing even if a pose was missed
-        for (let i=0;i<KP_NAMES.length;i++){
+        for (let i=0;i<KP_NAMES.length;i++) {
           kp.push({ i, name: KP_NAMES[i], x:null, y:null, score:null });
         }
       }
 
       frames.push({ t_ms, keypoints: kp });
       pillFrames.textContent = `Frames: ${frames.length}`;
-    }
-
-    // Loop: estimate poses in skeleton mode
-    let lastInfer = 0;
-    async function loop() {
-      if (!skeletonMode) return;
-
-      // throttle for iPhone stability
-      const now = performance.now();
-      const minIntervalMs = 80; // ~12.5 fps inference
-      if (now - lastInfer < minIntervalMs) {
-        requestAnimationFrame(loop);
-        return;
-      }
-      lastInfer = now;
-
-      // FPS display
-      if (!lastFpsT) lastFpsT = now;
-      fpsCount++;
-      if (now - lastFpsT > 1000) {
-        shownFps = fpsCount;
-        fpsCount = 0;
-        lastFpsT = now;
-        pillFps.textContent = `FPS: ${shownFps}`;
-      }
-
-      let pose = null;
-      try {
-        const poses = await detector.estimatePoses(video, { maxPoses: 1, flipHorizontal: false });
-        pose = (poses && poses[0]) ? poses[0] : null;
-      } catch (e) {
-        pose = null;
-      }
-
-      drawSkeleton(pose);
-
-      if (isRecording) {
-        captureFrameToJSON(pose);
-      }
-
-      requestAnimationFrame(loop);
     }
 
     function downloadJSON(payloadObj) {
@@ -323,30 +330,72 @@
       URL.revokeObjectURL(url);
     }
 
-    // -------- UI actions --------
+    // Loop with throttled inference for iPhone stability
+    let lastInfer = 0;
+    async function loop() {
+      if (!skeletonMode) return;
+
+      const now = performance.now();
+      const minIntervalMs = 80; // ~12.5 fps inference
+      if (now - lastInfer < minIntervalMs) {
+        requestAnimationFrame(loop);
+        return;
+      }
+      lastInfer = now;
+
+      // FPS display
+      if (!lastFpsT) lastFpsT = now;
+      fpsCount++;
+      if (now - lastFpsT > 1000) {
+        pillFps.textContent = `FPS: ${fpsCount}`;
+        fpsCount = 0;
+        lastFpsT = now;
+      }
+
+      let pose = null;
+      try {
+        const poses = await detector.estimatePoses(video, { maxPoses: 1, flipHorizontal: false });
+        pose = (poses && poses[0]) ? poses[0] : null;
+      } catch (e) {
+        pose = null;
+      }
+
+      drawSkeleton(pose);
+
+      if (isRecording) captureFrameToJSON(pose);
+
+      requestAnimationFrame(loop);
+    }
+
+    // ---- UI actions ----
     startBtn.addEventListener("click", async () => {
       try {
         await startCameraBack();
       } catch (e) {
         console.error(e);
-        setStatus("🔴 Camera error. Check iPhone permissions for Camera.");
+        setStatus("🔴 Camera error. Check iPhone Camera permission for this site.");
       }
     });
 
+    // Tap tape -> switch to skeleton mode, and store tape calibration
     tapeLine.addEventListener("click", async () => {
       if (!stream) return;
 
       tapeConfirmed = true;
       await initDetector();
 
+      // SWITCH VIEW: hide camera pixels, show skeleton canvas
       skeletonMode = true;
-      video.style.display = "none"; // hide camera pixels
+      video.style.display = "none";
+      canvas.style.display = "block";
+
       pillMode.textContent = "Mode: Skeleton";
+      pillTape.textContent = `Tape y_norm: ${TAPE_Y_NORM_FIXED.toFixed(2)}`;
 
       setStatus("🟢 Skeleton Mode – press Record (JSON)", "ready");
       recordBtn.disabled = false;
 
-      // start loop
+      // Start skeleton loop
       lastInfer = 0;
       lastFpsT = 0;
       fpsCount = 0;
@@ -375,23 +424,21 @@
       recordBtn.disabled = false;
       setStatus("🟢 Recording stopped – downloading JSON", "ready");
 
-      // Build payload
+      const nowIso = new Date().toISOString();
+      const fname = `ANVA_TUG_KEYPOINTS_${nowIso.slice(0,19).replace(/[:T]/g,'-')}.json`;
+
+      // JSON payload that Colab Cell 7 expects (meta includes tape_y_norm)
       const payload = {
         meta: {
           app: "ANVA_TUG",
           output: "movenet_keypoints_json",
           keypoint_format: "COCO_17",
-          created_iso: new Date().toISOString(),
-          filename: `ANVA_TUG_KEYPOINTS_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.json`,
-          video: {
-            width: canvas.width,
-            height: canvas.height
-          },
-          inference: {
-            model: "MoveNet.SinglePose.Lightning",
-            smoothing: true,
-            throttle_ms: 80
-          }
+          created_iso: nowIso,
+          filename: fname,
+          video: { width: canvas.width, height: canvas.height },
+          inference: { model: "MoveNet.SinglePose.Lightning", smoothing: true, throttle_ms: 80 },
+          tape_y_norm: TAPE_Y_NORM_FIXED,   // ✅ critical for Colab Cell 7
+          tape_bottom_frac: TAPE_BOTTOM_FRAC
         },
         frames
       };
