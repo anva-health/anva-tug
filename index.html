@@ -5,11 +5,11 @@
   <title>ANVA – TUG (Skeleton + JSON)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
+  <!-- iOS-friendly UI + tap handling -->
   <style>
     body { font-family: Arial, sans-serif; background:#f6f7f9; text-align:center; padding:16px; }
-    h1 { color:#0b5ed7; }
-
-    #wrap { width:100%; max-width:420px; margin:auto; }
+    h1 { color:#0b5ed7; margin: 8px 0 14px; }
+    #wrap { width:100%; max-width:420px; margin:0 auto; }
 
     #stage{
       position:relative;
@@ -18,6 +18,7 @@
       border-radius:12px;
       overflow:hidden;
       background:#111;
+      touch-action: none;              /* prevent scroll gestures stealing taps */
     }
 
     video, canvas{
@@ -28,275 +29,432 @@
       object-fit: cover;
     }
 
+    /* Blue tape overlay (tap this) */
     #tape{
       position:absolute;
-      left:6%;
-      right:6%;
+      left:0;
+      width:100%;
       height:10px;
-      bottom:18%;
-      border-radius:8px;
-      background: rgba(0,170,255,0.95);
+      background:#1677ff;
+      opacity:0.9;
+      top:72%;                         /* initial visual position; will be updated by drag later if you want */
       z-index:5;
+      cursor:pointer;
+      touch-action: manipulation;
+    }
+
+    #hint{
+      position:absolute;
+      left:0;
+      width:100%;
+      top:58%;
+      z-index:6;
+      color:#fff;
+      font-size:14px;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+      pointer-events:none;
+      padding: 0 8px;
+      box-sizing:border-box;
+    }
+
+    #panel{ margin-top:12px; }
+    button{
+      font-size:18px;
+      padding:12px 18px;
+      border-radius:10px;
+      border:none;
+      cursor:pointer;
+      margin:8px 6px;
+      touch-action: manipulation;
+    }
+    #startBtn{ background:#0b5ed7; color:#fff; width: 70%; max-width:320px; }
+    #recordBtn{ background:#198754; color:#fff; width: 45%; max-width:190px; }
+    #stopBtn{ background:#dc3545; color:#fff; width: 45%; max-width:190px; opacity:0.6; }
+
+    #statusBar{
+      margin:10px auto 0;
+      width: 100%;
+      max-width:420px;
+      background:#e9ecef;
+      border-radius:12px;
+      padding:10px 12px;
+      box-sizing:border-box;
+      display:flex;
+      gap:10px;
+      justify-content:space-between;
+      flex-wrap:wrap;
+      font-size:14px;
+      color:#222;
+    }
+    .pill{
+      background:#fff;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid #d6d8db;
+    }
+
+    #modeBanner{
+      margin:12px auto 10px;
+      width:100%;
+      max-width:420px;
+      background:#0f7a3a;
+      color:#fff;
+      border-radius:12px;
+      padding:10px 12px;
+      box-sizing:border-box;
+      font-size:18px;
       display:flex;
       align-items:center;
       justify-content:center;
-      font-size:12px;
-      font-weight:700;
+      gap:10px;
+    }
+    #dot{
+      width:16px;height:16px;border-radius:50%;
+      background:#2dff6a;
+      box-shadow:0 0 10px rgba(45,255,106,0.7);
     }
 
-    #tape.tapped{
-      background: rgba(0,220,140,0.95);
-    }
-
-    button{
-      padding:10px 14px;
-      border:0;
-      border-radius:10px;
-      background:#0b5ed7;
-      color:#fff;
-      font-weight:700;
-      margin:6px;
-    }
-
-    button:disabled{ opacity:0.45; }
-
-    #status{ margin-top:10px; font-size:14px; min-height:20px; }
-
-    #badge{
-      position:absolute;
-      top:10px;
-      left:10px;
-      padding:6px 10px;
-      border-radius:999px;
-      font-size:12px;
-      font-weight:800;
-      background: rgba(255,255,255,0.2);
-      color:#fff;
-      z-index:6;
-    }
+    /* IMPORTANT: ensure buttons are above anything */
+    #panel, #modeBanner, #statusBar { position:relative; z-index:10; }
   </style>
+
+  <!-- TensorFlow.js + Pose Detection (MoveNet) -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.20.0/dist/tf-core.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@4.20.0/dist/tf-converter.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.20.0/dist/tf-backend-webgl.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
 </head>
 
 <body>
-<div id="wrap">
+  <div id="wrap">
+    <h1>ANVA – TUG</h1>
 
-  <h1>ANVA TUG</h1>
+    <div id="stage">
+      <video id="video" playsinline muted></video>
+      <canvas id="canvas"></canvas>
 
-  <button id="btnStart">Start Camera</button>
-  <button id="btnRecord" disabled>Record</button>
-  <button id="btnStop" disabled>Stop</button>
+      <div id="tape" aria-label="Blue tape (tap to toggle skeleton mode)"></div>
+      <div id="hint">Tap the blue tape to switch to Skeleton Mode</div>
+    </div>
 
-  <div id="stage">
-    <div id="badge">MODE: LIVE</div>
-    <video id="video" playsinline muted></video>
-    <canvas id="canvas"></canvas>
-    <div id="tape">TAP BLUE TAPE</div>
+    <div id="modeBanner">
+      <div id="dot"></div>
+      <div id="bannerText">Camera Mode — tap tape for Skeleton</div>
+    </div>
+
+    <div id="panel">
+      <button id="startBtn" type="button">Start Camera</button><br/>
+      <button id="recordBtn" type="button" disabled>Record (JSON)</button>
+      <button id="stopBtn" type="button" disabled>Stop</button>
+
+      <div id="statusBar">
+        <div class="pill" id="modePill">Mode: Camera</div>
+        <div class="pill" id="framesPill">Frames: 0</div>
+        <div class="pill" id="fpsPill">FPS: —</div>
+        <div class="pill" id="tapePill">Tape y_norm: —</div>
+      </div>
+    </div>
   </div>
 
-  <div id="status"></div>
-
-</div>
-
 <script>
-const video  = document.getElementById('video');
-const canvas = document.getElementById('canvas');
-const ctx    = canvas.getContext('2d');
+(() => {
+  // ---------- Elements ----------
+  const video    = document.getElementById('video');
+  const canvas   = document.getElementById('canvas');
+  const ctx      = canvas.getContext('2d');
 
-const btnStart  = document.getElementById('btnStart');
-const btnRecord = document.getElementById('btnRecord');
-const btnStop   = document.getElementById('btnStop');
-const tapeEl    = document.getElementById('tape');
-const badgeEl   = document.getElementById('badge');
-const statusEl  = document.getElementById('status');
-const stageEl   = document.getElementById('stage');
+  const stage    = document.getElementById('stage');
+  const tapeEl   = document.getElementById('tape');
 
-let skeletonMode = false;
-let stream = null;
+  const startBtn = document.getElementById('startBtn');
+  const recordBtn= document.getElementById('recordBtn');
+  const stopBtn  = document.getElementById('stopBtn');
 
-let tape_y_norm = null;
-let tape_y_px   = null;
+  const modePill = document.getElementById('modePill');
+  const framesPill = document.getElementById('framesPill');
+  const fpsPill  = document.getElementById('fpsPill');
+  const tapePill = document.getElementById('tapePill');
 
-let isRecording = false;
-let frames = [];
+  const bannerText = document.getElementById('bannerText');
+  const hintEl = document.getElementById('hint');
 
-let prevMidX = null;
-let prevT = null;
-let velocityHistory = [];
+  // ---------- State ----------
+  let stream = null;
+  let detector = null;
+  let rafId = null;
 
-let events = {
-  tape_crossings: [],
-  turn: { anchor_ms:null, end_ms:null, time_ms:null }
-};
+  let skeletonMode = false;     // false = normal camera, true = draw skeleton
+  let isRecording = false;
+  let frames = [];
+  let t0 = 0;
 
-/* ------------------ HELPERS ------------------ */
+  let lastFrameTs = performance.now();
+  let fps = 0;
 
-function setStatus(msg){ statusEl.textContent = msg; }
+  // tape position (computed from DOM each frame so it's always correct)
+  let tapeYNorm = null;   // 0..1 in stage space
 
-function resizeCanvas(){
-  canvas.width  = video.videoWidth;
-  canvas.height = video.videoHeight;
-}
+  // ---------- Helpers ----------
+  function setButtons(cameraOn){
+    recordBtn.disabled = !cameraOn;
+    // stop only enabled while recording
+    stopBtn.disabled = !isRecording;
+    stopBtn.style.opacity = isRecording ? 1 : 0.6;
+  }
 
-function computeTape(){
-  const stageRect = stageEl.getBoundingClientRect();
-  const tapeRect  = tapeEl.getBoundingClientRect();
+  function setUIRecording(on){
+    isRecording = on;
+    recordBtn.disabled = on;      // lock record while recording
+    stopBtn.disabled = !on;
+    stopBtn.style.opacity = on ? 1 : 0.6;
+  }
 
-  const tapeCenter = tapeRect.top + tapeRect.height/2;
-  const relY = (tapeCenter - stageRect.top) / stageRect.height;
+  function setUIMode(){
+    modePill.textContent = `Mode: ${skeletonMode ? 'Skeleton' : 'Camera'}`;
+    bannerText.textContent = skeletonMode
+      ? 'Skeleton Mode — press Record (JSON)'
+      : 'Camera Mode — tap tape for Skeleton';
+    hintEl.style.display = skeletonMode ? 'none' : 'block';
+  }
 
-  tape_y_norm = relY;
-  tape_y_px = relY * canvas.height;
-}
+  function resizeCanvasToVideo(){
+    const w = video.videoWidth || 0;
+    const h = video.videoHeight || 0;
+    if (!w || !h) return;
 
-function sign(v){
-  if(Math.abs(v) < 0.3) return 0;
-  return v > 0 ? 1 : -1;
-}
+    if (canvas.width !== w)  canvas.width = w;
+    if (canvas.height !== h) canvas.height = h;
+  }
 
-/* ------------------ CAMERA ------------------ */
+  // Stage-space normalized tape Y (0..1), measured from DOM
+  function updateTapeYNormFromDOM(){
+    const stageRect = stage.getBoundingClientRect();
+    const tapeRect  = tapeEl.getBoundingClientRect();
 
-async function startCamera(){
-  stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:false });
-  video.srcObject = stream;
-  await video.play();
-  resizeCanvas();
-  btnRecord.disabled = false;
-  setStatus("Camera ready. Tap tape.");
-  requestAnimationFrame(loop);
-}
+    const tapeCenterY = (tapeRect.top + tapeRect.bottom) / 2;
+    const y = (tapeCenterY - stageRect.top) / stageRect.height;
+    tapeYNorm = Math.max(0, Math.min(1, y));
+    tapePill.textContent = `Tape y_norm: ${tapeYNorm.toFixed(2)}`;
+  }
 
-/* ------------------ POSE STUB ------------------ */
-/* Replace later with MoveNet */
+  function downloadJSON(payloadObj){
+    const blob = new Blob([JSON.stringify(payloadObj)], { type: "application/json" });
+    const url  = URL.createObjectURL(blob);
 
-function fakePose(){
-  const t = performance.now();
-  const x = 0.5 + 0.1*Math.sin(t/400);
-  return {
-    t_ms: t,
-    keypoints:{
-      left_ankle:{ x:x, y:0.75, score:0.99 },
-      right_ankle:{ x:x, y:0.75, score:0.99 }
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `anva_tug_${new Date().toISOString().replace(/[:.]/g,'-')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+
+  // ---------- Drawing ----------
+  // Minimal skeleton edges for MoveNet (17 keypoints)
+  const EDGES = [
+    [5,7],[7,9],     // left arm
+    [6,8],[8,10],    // right arm
+    [5,6],           // shoulders
+    [5,11],[6,12],   // torso
+    [11,12],         // hips
+    [11,13],[13,15], // left leg
+    [12,14],[14,16], // right leg
+  ];
+
+  function drawSkeleton(keypoints){
+    ctx.clearRect(0,0,canvas.width, canvas.height);
+
+    // Draw tape guide line in canvas coordinates (for debugging / trust)
+    if (tapeYNorm != null){
+      const y = tapeYNorm * canvas.height;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(canvas.width, y);
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = "#1677ff";
+      ctx.stroke();
     }
-  };
-}
 
-/* ------------------ TURN LOGIC ------------------ */
+    // points
+    for (const kp of keypoints){
+      if (!kp || kp.score < 0.25) continue;
+      ctx.beginPath();
+      ctx.arc(kp.x, kp.y, 4, 0, Math.PI*2);
+      ctx.fillStyle = "#00ff7a";
+      ctx.fill();
+    }
 
-function processTurn(pose){
+    // edges
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#00ff7a";
+    for (const [a,b] of EDGES){
+      const ka = keypoints[a], kb = keypoints[b];
+      if (!ka || !kb) continue;
+      if (ka.score < 0.25 || kb.score < 0.25) continue;
+      ctx.beginPath();
+      ctx.moveTo(ka.x, ka.y);
+      ctx.lineTo(kb.x, kb.y);
+      ctx.stroke();
+    }
+  }
 
-  const L = pose.keypoints.left_ankle;
-  const R = pose.keypoints.right_ankle;
-  if(!L || !R) return;
+  // ---------- Main Loop ----------
+  async function loop(){
+    try{
+      // update DOM-measured tape Y each frame (this is the fix you wanted)
+      updateTapeYNormFromDOM();
 
-  const midX = ((L.x + R.x)/2) * canvas.width;
+      // FPS calc
+      const now = performance.now();
+      const dt = now - lastFrameTs;
+      lastFrameTs = now;
+      if (dt > 0) fps = 1000 / dt;
+      fpsPill.textContent = `FPS: ${fps.toFixed(0)}`;
 
-  if(prevMidX !== null){
-    const dt = (pose.t_ms - prevT) / 1000;
-    const v  = (midX - prevMidX) / dt;
+      // ensure canvas matches video pixel space
+      resizeCanvasToVideo();
 
-    velocityHistory.push(v);
-    if(velocityHistory.length > 12) velocityHistory.shift();
-
-    if(events.turn.anchor_ms !== null && events.turn.end_ms === null){
-
-      const avgV = velocityHistory.reduce((a,b)=>a+b,0) / velocityHistory.length;
-
-      if(sign(avgV) !== sign(velocityHistory[0]) && Math.abs(pose.t_ms - events.turn.anchor_ms) > 150){
-        events.turn.end_ms = pose.t_ms;
-        events.turn.time_ms = events.turn.end_ms - events.turn.anchor_ms;
+      if (!detector || video.readyState < 2){
+        rafId = requestAnimationFrame(loop);
+        return;
       }
+
+      // Pose estimation
+      const poses = await detector.estimatePoses(video, { flipHorizontal: true });
+      const pose = poses && poses[0] ? poses[0] : null;
+
+      if (pose && pose.keypoints && pose.keypoints.length){
+        if (skeletonMode){
+          drawSkeleton(pose.keypoints);
+        } else {
+          // privacy-first: no drawing in camera mode (video is live preview only)
+          ctx.clearRect(0,0,canvas.width, canvas.height);
+        }
+
+        // RECORD JSON FRAMES (THIS is what was missing in your current behavior)
+        if (isRecording){
+          const kps = pose.keypoints.map(k => ({
+            // normalize to video pixel space for replay
+            x: +(k.x / canvas.width).toFixed(5),
+            y: +(k.y / canvas.height).toFixed(5),
+            s: +(+k.score).toFixed(5)
+          }));
+
+          frames.push({
+            t_ms: Math.round(performance.now() - t0),
+            tape_y_norm: tapeYNorm == null ? null : +tapeYNorm.toFixed(5),
+            kps
+          });
+
+          framesPill.textContent = `Frames: ${frames.length}`;
+        }
+      } else {
+        if (!skeletonMode) ctx.clearRect(0,0,canvas.width, canvas.height);
+      }
+
+      rafId = requestAnimationFrame(loop);
+    } catch (err){
+      console.error(err);
+      rafId = requestAnimationFrame(loop);
     }
   }
 
-  prevMidX = midX;
-  prevT = pose.t_ms;
-}
+  // ---------- Init TFJS + MoveNet ----------
+  async function initDetector(){
+    await tf.setBackend('webgl');
+    await tf.ready();
 
-/* ------------------ LOOP ------------------ */
-
-function loop(){
-
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-
-  if(skeletonMode){
-
-    const pose = fakePose();
-
-    if(isRecording){
-      frames.push(pose);
-      processTurn(pose);
-    }
-
-    ctx.beginPath();
-    ctx.moveTo(canvas.width*0.05, tape_y_px);
-    ctx.lineTo(canvas.width*0.95, tape_y_px);
-    ctx.stroke();
+    const model = poseDetection.SupportedModels.MoveNet;
+    const detectorConfig = {
+      modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING
+    };
+    detector = await poseDetection.createDetector(model, detectorConfig);
   }
 
-  requestAnimationFrame(loop);
-}
+  // ---------- Camera ----------
+  async function startCamera(){
+    if (stream) return;
 
-/* ------------------ RECORDING ------------------ */
+    // request environment camera if available
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio:false,
+      video:{
+        facingMode: { ideal: "environment" },
+        width: { ideal: 720 },
+        height: { ideal: 1280 }
+      }
+    });
 
-function startRecording(){
+    video.srcObject = stream;
 
-  frames = [];
-  velocityHistory = [];
-  prevMidX = null;
+    // iOS: must play after user gesture
+    await video.play();
 
-  events = { tape_crossings:[], turn:{anchor_ms:null,end_ms:null,time_ms:null} };
+    await initDetector();
 
-  isRecording = true;
-  btnStop.disabled = false;
-  btnRecord.disabled = true;
+    setButtons(true);
+    setUIMode();
+    framesPill.textContent = "Frames: 0";
+    fpsPill.textContent = "FPS: —";
 
-  setStatus("Recording...");
-}
+    cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(loop);
+  }
 
-function stopRecording(){
-
-  isRecording = false;
-  btnStop.disabled = true;
-  btnRecord.disabled = false;
-
-  const turnSec = events.turn.time_ms ? (events.turn.time_ms/1000).toFixed(2) : "NO TURN";
-
-  setStatus("Stopped | Turn: " + turnSec);
-
-  downloadJSON({
-    tape:{ tape_y_norm, tape_y_px },
-    events,
-    frames
+  // ---------- Events (iPhone-proof: pointerup) ----------
+  startBtn.addEventListener('pointerup', async (e) => {
+    e.preventDefault(); e.stopPropagation();
+    try{
+      startBtn.disabled = true;
+      await startCamera();
+    } catch(err){
+      console.error(err);
+      alert("Camera start failed. Check permissions and reload.");
+      startBtn.disabled = false;
+    }
   });
-}
 
-function downloadJSON(obj){
-  const blob = new Blob([JSON.stringify(obj,null,2)], {type:"application/json"});
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement("a");
-  a.href = url;
-  a.download = "ANVA_TUG.json";
-  a.click();
-}
+  // Tap tape toggles skeleton mode (exactly your UX)
+  tapeEl.addEventListener('pointerup', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    skeletonMode = !skeletonMode;
+    setUIMode();
+  });
 
-/* ------------------ UI ------------------ */
+  recordBtn.addEventListener('pointerup', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    if (!detector) return;
 
-btnStart.onclick  = startCamera;
-btnRecord.onclick = startRecording;
-btnStop.onclick   = stopRecording;
+    frames = [];
+    t0 = performance.now();
+    framesPill.textContent = "Frames: 0";
+    setUIRecording(true);
+  });
 
-tapeEl.onclick = () => {
-  skeletonMode = !skeletonMode;
-  tapeEl.classList.toggle("tapped", skeletonMode);
-  badgeEl.textContent = skeletonMode ? "MODE: SKELETON" : "MODE: LIVE";
+  stopBtn.addEventListener('pointerup', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    if (!isRecording) return;
 
-  if(skeletonMode){
-    computeTape();
-    setStatus("Tape locked");
-  }
-};
+    setUIRecording(false);
 
-setStatus("Press Start Camera");
+    // IMPORTANT: iOS download must happen directly in this user gesture
+    const payload = {
+      version: "anva_tug_json_v1",
+      device: navigator.userAgent,
+      started_epoch_ms: Date.now(),
+      frames
+    };
+
+    downloadJSON(payload);
+  });
+
+  // Initial UI
+  setUIMode();
+  setButtons(false);
+
+})();
 </script>
 </body>
 </html>
