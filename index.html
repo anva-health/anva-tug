@@ -2,62 +2,43 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>ANVA – TUG (Keypoints-only + Tape + Replay)</title>
+  <title>ANVA – TUG (No-Tap Tape AutoDetect)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <style>
     body { font-family: Arial, sans-serif; background:#f6f7f9; text-align:center; padding:16px; }
     h1 { color:#0b5ed7; margin: 8px 0 14px; }
     #wrap { width:100%; max-width:420px; margin:0 auto; }
-
     #stage{
-      position:relative;
-      width:100%;
-      aspect-ratio: 9 / 16;
-      border-radius:12px;
-      overflow:hidden;
-      background:#111;
+      position:relative; width:100%; aspect-ratio: 9 / 16;
+      border-radius:12px; overflow:hidden; background:#111;
       box-shadow: 0 6px 18px rgba(0,0,0,.12);
-      touch-action: manipulation;
     }
-
     video, canvas{
-      position:absolute;
-      inset:0;
-      width:100%;
-      height:100%;
-      object-fit: cover;
+      position:absolute; inset:0; width:100%; height:100%; object-fit: cover;
     }
-
-    /* UI */
     .row { display:flex; gap:10px; justify-content:center; margin-top:12px; flex-wrap:wrap; }
-    button {
+    button{
       padding:12px 14px; border:0; border-radius:10px; font-weight:700;
       background:#0b5ed7; color:#fff; cursor:pointer;
     }
     button:disabled { background:#9bb7e9; cursor:not-allowed; }
-    .ghost { background:#fff; color:#0b5ed7; border:2px solid #0b5ed7; }
-    .danger { background:#dc3545; }
     .ok { background:#198754; }
-    #status {
+    .danger { background:#dc3545; }
+    .ghost { background:#fff; color:#0b5ed7; border:2px solid #0b5ed7; }
+
+    #status{
       margin-top:10px; font-size:13px; line-height:1.35; color:#222;
       background:#fff; border-radius:10px; padding:10px 12px; text-align:left;
       border:1px solid #e6e8ee;
     }
+    .small { font-size:12px; color:#555; }
     .pill { display:inline-block; padding:3px 8px; border-radius:999px; font-weight:700; font-size:12px; }
     .pill-ok { background:#d1e7dd; color:#0f5132; }
     .pill-warn { background:#fff3cd; color:#664d03; }
     .pill-bad { background:#f8d7da; color:#842029; }
-    .small { font-size:12px; color:#555; }
-
-    /* Hide stage until camera started */
-    #stage { display:none; }
-
-    /* Replay canvas only mode */
-    #replayHint { margin-top:8px; font-size:12px; color:#444; display:none; }
   </style>
 
-  <!-- TensorFlow.js + Pose Detection (MoveNet) -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
 </head>
@@ -68,7 +49,7 @@
 
     <div class="small">
       Privacy: <span class="pill pill-ok">NO camera pixels saved</span> · Output: <span class="pill pill-ok">Keypoints JSON only</span><br>
-      Tap the blue tape line on screen to set the turn marker. Record unlocks only after validity is green.
+      Tape: <span id="tapePill" class="pill pill-warn">Detecting…</span> · Record unlocks only when green.
     </div>
 
     <div id="stage">
@@ -77,82 +58,82 @@
     </div>
 
     <div class="row">
-      <button id="btnCam" class="ok">Start Camera</button>
-      <button id="btnTape" class="ghost" disabled>Set Tape (Tap Line)</button>
+      <button id="btnCam" class="ok">Start Camera (Rear)</button>
       <button id="btnRecord" disabled>Record TUG</button>
       <button id="btnStop" class="danger" disabled>Stop</button>
       <button id="btnDownload" class="ghost" disabled>Download JSON</button>
     </div>
 
-    <div id="replayHint">Replay mode: after recording, tap “Record TUG” again to view replay on the same canvas (no video stored).</div>
-
     <div id="status">
       <div><b>Status:</b> <span id="stText">Idle</span></div>
-      <div class="small" id="stDetail"></div>
+      <div class="small" id="stDetail">Rear camera + auto tape detection. No tap.</div>
     </div>
   </div>
 
 <script>
 (() => {
-  // -----------------------------
-  // Locked instrument constants
-  // -----------------------------
+  // -------------------------
+  // Instrument locks
+  // -------------------------
   const CFG = {
-    version: "ANVA_TUG_KEYPOINTS_v2",
-    minScore: 0.35,            // (5) confidence gating threshold
-    maxInterpGapMs: 250,       // (8) bounded interpolation allowed gap
-    drawFps: 30,               // display smoothing
-    filterWindow: 5,           // (9) simple median window for display only
-    requireFeetVisible: true,  // (11) visibility monitoring
-    requireTapeSet: true,      // (1) tape alignment required before record
-    requireFullBody: true,     // (11) basic sanity: hips+knees+ankles
-    // (3)(4) timing truth = performance.now monotonic
+    version: "ANVA_TUG_KEYPOINTS_v3_NOTAP_AUTOTAPE",
+    minScore: 0.35,
+
+    // Auto tape detection tuning (fast + robust)
+    tapeSampleW: 160,
+    tapeSampleH: 284,          // ~9:16
+    tapeScanEveryMs: 180,
+    tapeMinScore: 1200,        // raise if false positives; lower if tape not found
+    tapeStableFrames: 6,       // lock after N consistent detections
+    tapeRowSmoothing: 0.35,    // EMA smoothing
+    tapeLockMaxJitterPx: 6,    // stability requirement in downsample pixels
+
+    // Recording
+    requireFeetVisible: true,
+    requireFullBody: true
   };
 
-  // -----------------------------
+  // -------------------------
   // DOM
-  // -----------------------------
-  const stage = document.getElementById("stage");
+  // -------------------------
   const video = document.getElementById("video");
   const canvas = document.getElementById("canvas");
   const ctx = canvas.getContext("2d");
 
   const btnCam = document.getElementById("btnCam");
-  const btnTape = document.getElementById("btnTape");
   const btnRecord = document.getElementById("btnRecord");
   const btnStop = document.getElementById("btnStop");
   const btnDownload = document.getElementById("btnDownload");
 
   const stText = document.getElementById("stText");
   const stDetail = document.getElementById("stDetail");
-  const replayHint = document.getElementById("replayHint");
+  const tapePill = document.getElementById("tapePill");
 
-  // -----------------------------
+  function setStatus(main, detail="") {
+    stText.textContent = main;
+    stDetail.textContent = detail;
+  }
+
+  // -------------------------
   // State
-  // -----------------------------
+  // -------------------------
   let detector = null;
   let stream = null;
 
-  let tapeYNorm = null;           // (1) tape reference in normalized viewport coordinates (0..1)
-  let tapeWasSetByUser = false;
+  // tape
+  let tapeYNorm = null;        // final locked normalized tape y
+  let tapeLocked = false;
+  let tapeEmaRow = null;       // smoothed row index in sample image
+  let tapeStableCount = 0;
 
-  let isTapeSetMode = false;
+  // recording
   let isRecording = false;
-  let isReplayMode = false;
-
-  // frames recorded: {t_ms, tape_y_norm, kps:[{x,y,s}...], validity:{...}}
-  let recorded = [];
   let recordStartMs = null;
+  let recorded = [];
 
-  // for dropout handling
-  let lastGoodFrame = null;
+  // last pose
+  let lastPoseByName = null;
 
-  // replay index
-  let replayIdx = 0;
-  let replayTimer = null;
-
-  // 17-keypoint mapping (MoveNet / BlazePose style indexes differ by model; pose-detection returns named keypoints)
-  // We'll store only {x,y,score} in a stable order based on "name".
   const KEY_ORDER = [
     "nose","left_eye","right_eye","left_ear","right_ear",
     "left_shoulder","right_shoulder","left_elbow","right_elbow",
@@ -160,79 +141,25 @@
     "left_knee","right_knee","left_ankle","right_ankle"
   ];
 
-  function setStatus(main, detail="") {
-    stText.textContent = main;
-    stDetail.textContent = detail;
-  }
+  // offscreen sampler for tape detection
+  const samp = document.createElement("canvas");
+  samp.width = CFG.tapeSampleW;
+  samp.height = CFG.tapeSampleH;
+  const sctx = samp.getContext("2d", { willReadFrequently:true });
 
-  // -----------------------------
-  // Utilities
-  // -----------------------------
-  function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+  function nowMs() { return performance.now(); }
 
-  function resizeCanvasToVideo() {
-    const rect = stage.getBoundingClientRect();
+  function resizeCanvas() {
+    const rect = canvas.parentElement.getBoundingClientRect();
     canvas.width = Math.round(rect.width);
     canvas.height = Math.round(rect.height);
   }
 
-  // (6) normalize to viewport; we store normalized positions to remove device size
-  function toNorm(xPx, yPx) {
-    return { x: xPx / canvas.width, y: yPx / canvas.height };
+  function toNorm(px, py) {
+    return { x: px / canvas.width, y: py / canvas.height };
   }
-
   function fromNorm(x, y) {
     return { x: x * canvas.width, y: y * canvas.height };
-  }
-
-  function median(arr) {
-    const a = arr.slice().sort((p,q)=>p-q);
-    const m = Math.floor(a.length/2);
-    return a.length % 2 ? a[m] : (a[m-1]+a[m])/2;
-  }
-
-  // (9) display-only smoothing (never alters raw recorded truth unless you explicitly choose to)
-  function medianFilterKps(frameList, idx, win) {
-    const half = Math.floor(win/2);
-    const xs = [], ys = [], ss = [];
-    for (let k=idx-half; k<=idx+half; k++){
-      if (k<0 || k>=frameList.length) continue;
-      const kp = frameList[k];
-      xs.push(kp.x); ys.push(kp.y); ss.push(kp.s);
-    }
-    return { x: median(xs), y: median(ys), s: median(ss) };
-  }
-
-  // (11)(5) determine if key landmarks are visible with confidence gating
-  function visibilityReport(kpsByName) {
-    const need = ["left_hip","right_hip","left_knee","right_knee","left_ankle","right_ankle"];
-    const missing = [];
-    for (const n of need) {
-      const kp = kpsByName[n];
-      if (!kp || kp.score < CFG.minScore) missing.push(n);
-    }
-    const ok = missing.length === 0;
-    return { ok, missing };
-  }
-
-  // (7)(8) dropout handling + bounded interpolation:
-  // - if a frame is missing/low conf, we can carry-forward for DISPLAY
-  // - but for RECORD we flag invalid or interpolated with bounds
-  function boundedInterp(prev, curr, dtMs) {
-    // if gap too large => no fabrication
-    if (!prev || !curr || dtMs > CFG.maxInterpGapMs) return null;
-    // linear interpolation for each kp
-    const out = {};
-    for (const name of KEY_ORDER) {
-      const a = prev[name], b = curr[name];
-      if (!a || !b) continue;
-      out[name] = {
-        x: a.x + (b.x-a.x)*0.5,
-        y: a.y + (b.y-a.y)*0.5,
-        score: Math.min(a.score, b.score)
-      };
-    }
-    return out;
   }
 
   function keypointsToStableArray(kpsByName) {
@@ -243,66 +170,23 @@
     });
   }
 
-  function stableArrayToByName(arr) {
-    const m = {};
-    for (let i=0;i<KEY_ORDER.length;i++){
-      m[KEY_ORDER[i]] = { x: arr[i].x, y: arr[i].y, score: arr[i].s };
+  function visibilityReport(kpsByName) {
+    const need = ["left_hip","right_hip","left_knee","right_knee","left_ankle","right_ankle"];
+    const missing = [];
+    for (const n of need) {
+      const kp = kpsByName[n];
+      if (!kp || kp.score < CFG.minScore) missing.push(n);
     }
-    return m;
+    return { ok: missing.length === 0, missing };
   }
 
-  function nowMsMonotonic() {
-    // (4) monotonic clock: independent of FPS, avoids “timing lies”
-    return performance.now();
-  }
-
-  // -----------------------------
-  // Tape set: DOM-measured (the tap point in stage maps to normalized Y)
-  // -----------------------------
-  function enterTapeSetMode() {
-    isTapeSetMode = true;
-    setStatus("Tape set mode", "Tap anywhere on the video/canvas where the blue tape line is on the floor.");
-  }
-
-  function exitTapeSetMode() {
-    isTapeSetMode = false;
-    setStatus("Live", tapeYNorm !== null ? `Tape locked at y_norm=${tapeYNorm.toFixed(4)}` : "");
-  }
-
-  function onStageTap(ev) {
-    const rect = stage.getBoundingClientRect();
-    const clientY = (ev.touches && ev.touches[0]) ? ev.touches[0].clientY : ev.clientY;
-    const y = (clientY - rect.top) / rect.height;
-    const yN = clamp01(y);
-
-    if (isTapeSetMode) {
-      tapeYNorm = yN;
-      tapeWasSetByUser = true;
-      exitTapeSetMode();
-      // (1) tape alignment now defined; allow record if other validity conditions pass
-      btnRecord.disabled = !isGreenValid();
-      btnTape.textContent = "Tape Locked";
-      btnTape.disabled = false;
-      setStatus("Tape locked", `Blue tape reference locked at y_norm=${tapeYNorm.toFixed(4)}. Record will unlock when pose validity is green.`);
-      return;
-    }
-
-    // Optional: quick toggle into tape set mode if user taps near existing line
-    // (kept conservative to avoid accidental changes)
-  }
-
-  // -----------------------------
-  // Green validity gate (instrument protection)
-  // -----------------------------
-  function isGreenValid(lastPoseByName=null) {
-    // (40) validity gates: do not allow recording if prerequisites are missing
-    if (CFG.requireTapeSet && tapeYNorm === null) return false;
+  function isGreenValid() {
+    if (!tapeLocked || tapeYNorm === null) return false;
     if (!lastPoseByName) return false;
 
     const vis = visibilityReport(lastPoseByName);
     if (CFG.requireFullBody && !vis.ok) return false;
 
-    // (11) if feet required, ensure ankles valid
     if (CFG.requireFeetVisible) {
       const la = lastPoseByName["left_ankle"], ra = lastPoseByName["right_ankle"];
       if (!la || !ra) return false;
@@ -311,10 +195,10 @@
     return true;
   }
 
-  // -----------------------------
-  // Draw helpers (skeleton + tape)
-  // -----------------------------
-  function drawTape() {
+  // -------------------------
+  // Draw
+  // -------------------------
+  function drawTapeOverlay() {
     if (tapeYNorm === null) return;
     const y = tapeYNorm * canvas.height;
     ctx.save();
@@ -327,42 +211,32 @@
     ctx.restore();
   }
 
-  function drawSkeleton(kpsByName, useFiltered=false) {
-    // Build stable array
-    const stable = keypointsToStableArray(kpsByName);
+  function drawBanner(green) {
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = green ? "rgba(25,135,84,0.85)" : "rgba(220,53,69,0.85)";
+    ctx.fillRect(0, 0, canvas.width, 36);
+    ctx.fillStyle = "white";
+    ctx.font = "bold 14px Arial";
+    ctx.fillText(green ? "GREEN: Valid setup (Record unlocked)" : "RED: Wait (Tape + full body + feet)", 10, 23);
+    ctx.restore();
+  }
 
-    // Apply display median filter across the *latest recorded* if requested
-    // For live display we do light smoothing by using lastGoodFrame (not altering recorded truth)
-    let disp = stable;
-    if (useFiltered && lastGoodFrame && lastGoodFrame._stable) {
-      // simple: average current with lastGood for display
-      disp = disp.map((p, i) => {
-        const q = lastGoodFrame._stable[i];
-        if (!q) return p;
-        return {
-          x: (p.x + q.x)/2,
-          y: (p.y + q.y)/2,
-          s: Math.min(p.s, q.s)
-        };
-      });
+  function drawSkeleton(kpsByName) {
+    const stable = keypointsToStableArray(kpsByName);
+    const byName = {};
+    for (let i=0;i<KEY_ORDER.length;i++){
+      byName[KEY_ORDER[i]] = { x: stable[i].x, y: stable[i].y, score: stable[i].s };
     }
 
-    const byName = stableArrayToByName(disp);
-
-    // Connections (basic)
     const edges = [
       ["left_shoulder","right_shoulder"],
-      ["left_shoulder","left_elbow"],
-      ["left_elbow","left_wrist"],
-      ["right_shoulder","right_elbow"],
-      ["right_elbow","right_wrist"],
-      ["left_shoulder","left_hip"],
-      ["right_shoulder","right_hip"],
+      ["left_shoulder","left_elbow"], ["left_elbow","left_wrist"],
+      ["right_shoulder","right_elbow"], ["right_elbow","right_wrist"],
+      ["left_shoulder","left_hip"], ["right_shoulder","right_hip"],
       ["left_hip","right_hip"],
-      ["left_hip","left_knee"],
-      ["left_knee","left_ankle"],
-      ["right_hip","right_knee"],
-      ["right_knee","right_ankle"]
+      ["left_hip","left_knee"], ["left_knee","left_ankle"],
+      ["right_hip","right_knee"], ["right_knee","right_ankle"]
     ];
 
     ctx.save();
@@ -370,7 +244,6 @@
     ctx.strokeStyle = "rgba(0, 255, 170, 0.90)";
     ctx.fillStyle = "rgba(0, 255, 170, 0.90)";
 
-    // edges
     for (const [a,b] of edges) {
       const A = byName[a], B = byName[b];
       if (!A || !B) continue;
@@ -383,7 +256,6 @@
       ctx.stroke();
     }
 
-    // points (hips/knees/ankles emphasized)
     const points = ["left_hip","right_hip","left_knee","right_knee","left_ankle","right_ankle"];
     for (const n of points) {
       const P = byName[n];
@@ -393,26 +265,97 @@
       ctx.arc(p.x, p.y, 5, 0, Math.PI*2);
       ctx.fill();
     }
-
     ctx.restore();
   }
 
-  function drawGreenGateBox(ok) {
-    // Simple top banner indicator instead of a box (low cognitive load)
-    ctx.save();
-    ctx.globalAlpha = 0.85;
-    ctx.fillStyle = ok ? "rgba(25, 135, 84, 0.85)" : "rgba(220, 53, 69, 0.85)";
-    ctx.fillRect(0, 0, canvas.width, 36);
-    ctx.fillStyle = "white";
-    ctx.font = "bold 14px Arial";
-    ctx.fillText(ok ? "GREEN: Valid setup (Record unlocked)" : "RED: Fix setup (Tape + full body + feet)", 10, 23);
-    ctx.restore();
+  // -------------------------
+  // Auto-detect blue tape line (NO TAP)
+  // -------------------------
+  function scoreBluePixel(r,g,b){
+    // “blue-ness” heuristic: strong B, weaker R/G, and some brightness
+    // Adjust if your tape is lighter/darker.
+    const blue = b - Math.max(r,g);
+    if (b < 70) return 0;
+    if (blue < 25) return 0;
+    return blue; // higher = more confidently blue
   }
 
-  // -----------------------------
-  // Core loop
-  // -----------------------------
+  function detectTapeRow() {
+    if (video.readyState < 2) return null;
+
+    // draw current video frame into downsample canvas (local only, not saved)
+    sctx.drawImage(video, 0, 0, samp.width, samp.height);
+    const img = sctx.getImageData(0, 0, samp.width, samp.height);
+    const d = img.data;
+
+    // accumulate blue score per row
+    const rowScore = new Int32Array(samp.height);
+
+    for (let y=0; y<samp.height; y++){
+      let sum = 0;
+      const rowStart = y * samp.width * 4;
+      for (let x=0; x<samp.width; x++){
+        const i = rowStart + x*4;
+        const r = d[i], g = d[i+1], b = d[i+2];
+        sum += scoreBluePixel(r,g,b);
+      }
+      rowScore[y] = sum;
+    }
+
+    // find max row
+    let bestY = 0;
+    let best = rowScore[0];
+    for (let y=1; y<samp.height; y++){
+      if (rowScore[y] > best) {
+        best = rowScore[y];
+        bestY = y;
+      }
+    }
+
+    if (best < CFG.tapeMinScore) return null;  // no reliable tape found
+    return { row: bestY, score: best };
+  }
+
+  function updateTapeState(det) {
+    if (!det) {
+      if (!tapeLocked) {
+        tapePill.className = "pill pill-warn";
+        tapePill.textContent = "Detecting…";
+        tapeStableCount = 0;
+      }
+      return;
+    }
+
+    // EMA smooth row
+    if (tapeEmaRow === null) tapeEmaRow = det.row;
+    tapeEmaRow = (1 - CFG.tapeRowSmoothing) * tapeEmaRow + (CFG.tapeRowSmoothing) * det.row;
+
+    // stability check (within jitter px)
+    const jitter = Math.abs(det.row - tapeEmaRow);
+    if (jitter <= CFG.tapeLockMaxJitterPx) tapeStableCount++;
+    else tapeStableCount = 0;
+
+    // lock tape when stable
+    if (!tapeLocked && tapeStableCount >= CFG.tapeStableFrames) {
+      tapeLocked = true;
+      tapeYNorm = Math.max(0, Math.min(1, tapeEmaRow / samp.height));
+      tapePill.className = "pill pill-ok";
+      tapePill.textContent = "Locked";
+      setStatus("Live", `Tape locked automatically at y_norm=${tapeYNorm.toFixed(4)} (no tap).`);
+    }
+
+    // if not locked yet, show confidence
+    if (!tapeLocked) {
+      tapePill.className = "pill pill-warn";
+      tapePill.textContent = "Detecting…";
+    }
+  }
+
+  // -------------------------
+  // Main loop
+  // -------------------------
   let rafId = null;
+  let lastTapeScanMs = 0;
 
   async function loop() {
     if (!detector || video.readyState < 2) {
@@ -420,96 +363,63 @@
       return;
     }
 
-    resizeCanvasToVideo();
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    resizeCanvas();
+    ctx.clearRect(0,0,canvas.width,canvas.height);
 
-    // draw tape first
-    drawTape();
+    // Tape scan (throttled)
+    const t = nowMs();
+    if (!tapeLocked && (t - lastTapeScanMs) > CFG.tapeScanEveryMs) {
+      lastTapeScanMs = t;
+      const det = detectTapeRow();
+      updateTapeState(det);
+    }
 
-    // estimate pose
+    // Draw tape (if locked)
+    drawTapeOverlay();
+
+    // Pose
     let poses = [];
     try {
-      poses = await detector.estimatePoses(video, { maxPoses: 1, flipHorizontal: true });
+      poses = await detector.estimatePoses(video, { maxPoses: 1, flipHorizontal: false });
     } catch (e) {
       setStatus("Pose error", String(e));
       rafId = requestAnimationFrame(loop);
       return;
     }
 
-    let pose = poses && poses[0] ? poses[0] : null;
-    let kpsByName = {};
+    const pose = poses && poses[0] ? poses[0] : null;
+    const kpsByName = {};
 
     if (pose && pose.keypoints) {
-      // Convert pixel coords -> normalized (6)
       for (const kp of pose.keypoints) {
         if (!kp.name) continue;
         const n = toNorm(kp.x, kp.y);
         kpsByName[kp.name] = { x: n.x, y: n.y, score: kp.score ?? 0 };
       }
+      lastPoseByName = kpsByName;
+      drawSkeleton(kpsByName);
     }
 
-    // Dropout handling (7)
-    const vis = visibilityReport(kpsByName);
-    const green = isGreenValid(kpsByName);
+    const green = isGreenValid();
+    drawBanner(green);
 
-    // Draw skeleton (filtered display)
-    if (pose) drawSkeleton(kpsByName, true);
-
-    // Gate banner
-    drawGreenGateBox(green);
-
-    // Status text
-    if (!tapeWasSetByUser) {
-      setStatus("Live", "Tap “Set Tape” then tap the blue tape line on screen to lock it.");
-    } else if (!vis.ok) {
-      setStatus("Live", `Missing landmarks: ${vis.missing.join(", ")}`);
-    } else {
-      setStatus("Live", green ? "Valid setup. You can record." : "Fix setup until green.");
-    }
-
-    // Enable/disable Record dynamically
-    if (!isRecording && !isReplayMode) {
+    if (!isRecording) {
       btnRecord.disabled = !green;
     }
 
-    // (3)(4) Pose frame as measurement unit + monotonic clock for recording
-    if (isRecording) {
-      const tNow = nowMsMonotonic();
-      const tRel = Math.round(tNow - recordStartMs);
+    // Record frame
+    if (isRecording && lastPoseByName) {
+      const tRel = Math.round(nowMs() - recordStartMs);
+      const stable = keypointsToStableArray(lastPoseByName);
 
-      // Build stable array
-      const stable = keypointsToStableArray(kpsByName);
+      const vis = visibilityReport(lastPoseByName);
+      const la = lastPoseByName["left_ankle"], ra = lastPoseByName["right_ankle"];
 
-      // Determine validity flags (40)(42)
       const validity = {
-        tape_set: tapeYNorm !== null,
+        tape_locked: tapeLocked,
         full_body_ok: vis.ok,
-        feet_ok: true,
-        conf_ok: true,
-        interpolated: false,
-        dropout: false
+        feet_ok: !!(la && ra && la.score >= CFG.minScore && ra.score >= CFG.minScore)
       };
-
-      // Check ankle confidence
-      const la = kpsByName["left_ankle"], ra = kpsByName["right_ankle"];
-      if (!la || !ra || la.score < CFG.minScore || ra.score < CFG.minScore) validity.feet_ok = false;
-
-      // Check overall confidence
-      for (const p of stable) {
-        if (p.s > 0 && p.s < CFG.minScore) { validity.conf_ok = false; break; }
-      }
-
-      // If visibility fails, attempt bounded interpolation (8) ONLY for continuity,
-      // but we still mark the frame invalid so downstream math can refuse hallucinations.
-      if (!vis.ok) {
-        validity.dropout = true;
-
-        // If we have lastGoodFrame and current pose is low quality, do not fabricate raw truth.
-        // Downstream analysis can choose to interpolate within bounds.
-      } else {
-        // good pose
-        lastGoodFrame = { tRel, _stable: stable, byName: kpsByName };
-      }
 
       recorded.push({
         t_ms: tRel,
@@ -522,114 +432,61 @@
     rafId = requestAnimationFrame(loop);
   }
 
-  // -----------------------------
-  // Replay (41): stick-figure replay from JSON frames
-  // -----------------------------
-  function startReplay() {
-    if (!recorded.length) return;
-    isReplayMode = true;
-    replayHint.style.display = "block";
-    btnStop.disabled = true;
-    btnTape.disabled = true;
-    btnRecord.disabled = true;
-    btnDownload.disabled = false;
+  // -------------------------
+  // Camera + model init (rear)
+  // -------------------------
+  async function startCameraRear() {
+    setStatus("Starting rear camera…", "");
 
-    replayIdx = 0;
-    setStatus("Replay", "Rendering stick-figure replay from recorded keypoints (no video stored).");
-
-    if (replayTimer) clearInterval(replayTimer);
-    replayTimer = setInterval(() => {
-      resizeCanvasToVideo();
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      drawTape();
-
-      const fr = recorded[replayIdx];
-      if (!fr) {
-        clearInterval(replayTimer);
-        replayTimer = null;
-        isReplayMode = false;
-        btnTape.disabled = false;
-        btnRecord.disabled = false;
-        setStatus("Replay done", "You can set tape again or record another trial.");
-        return;
-      }
-
-      const byName = stableArrayToByName(fr.kps.map(p => ({x:p.x, y:p.y, s:p.s})));
-      drawSkeleton(byName, false);
-
-      // show validity on banner
-      const ok = fr.validity.tape_set && fr.validity.full_body_ok && fr.validity.feet_ok;
-      drawGreenGateBox(ok);
-
-      replayIdx++;
-    }, Math.round(1000 / CFG.drawFps));
-  }
-
-  // -----------------------------
-  // Camera / model init
-  // -----------------------------
-  async function startCamera() {
-    setStatus("Starting camera...", "");
-    stage.style.display = "block";
-    resizeCanvasToVideo();
-
-    // Try WebGL for speed; fall back to CPU
     try { await tf.setBackend("webgl"); await tf.ready(); }
     catch { await tf.setBackend("cpu"); await tf.ready(); }
 
+    // iOS can be stubborn; try exact environment first, then fallback to ideal.
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          facingMode: "user",
+          facingMode: { exact: "environment" },
           width: { ideal: 720 },
           height: { ideal: 1280 }
         },
         audio: false
       });
-    } catch (e) {
-      setStatus("Camera blocked", "Enable camera permissions in iOS Settings / browser.");
-      return;
+    } catch {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 720 },
+          height: { ideal: 1280 }
+        },
+        audio: false
+      });
     }
 
     video.srcObject = stream;
     await video.play();
 
-    // Create MoveNet detector
-    setStatus("Loading pose model...", "");
+    setStatus("Loading pose model…", "");
     detector = await poseDetection.createDetector(
       poseDetection.SupportedModels.MoveNet,
       { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
     );
 
-    setStatus("Live", "Tap “Set Tape” then tap the blue tape line on screen to lock it.");
-    btnTape.disabled = false;
     btnCam.disabled = true;
-
-    // Start loop
+    setStatus("Live", "Auto-detecting blue tape. Record unlocks when green.");
     if (rafId) cancelAnimationFrame(rafId);
     rafId = requestAnimationFrame(loop);
   }
 
-  // -----------------------------
+  // -------------------------
   // Record controls
-  // -----------------------------
+  // -------------------------
   function startRecording() {
-    if (isReplayMode) return;
-
-    // If we already have a recording, a second press goes to replay (simple clinician workflow)
-    if (recorded.length && !isRecording) {
-      startReplay();
-      return;
-    }
-
     recorded = [];
-    lastGoodFrame = null;
-    recordStartMs = nowMsMonotonic();
     isRecording = true;
+    recordStartMs = nowMs();
 
     btnRecord.disabled = true;
     btnStop.disabled = false;
-    btnTape.disabled = true;
     btnDownload.disabled = true;
 
     setStatus("Recording", "Capturing keypoints time-series (monotonic time).");
@@ -637,39 +494,20 @@
 
   function stopRecording() {
     isRecording = false;
-
     btnStop.disabled = true;
-    btnTape.disabled = false;
     btnDownload.disabled = recorded.length === 0;
-    btnRecord.disabled = false;
+    btnRecord.disabled = !isGreenValid();
 
-    // (42) discrepancy detection: flag if too short, too many invalid frames, etc.
-    const n = recorded.length;
-    let invalid = 0;
-    for (const fr of recorded) {
-      const ok = fr.validity.tape_set && fr.validity.full_body_ok && fr.validity.feet_ok;
-      if (!ok) invalid++;
-    }
-    const invalidPct = n ? Math.round((invalid/n)*100) : 100;
-
-    setStatus(
-      "Stopped",
-      `Frames: ${n}. Invalid frames: ${invalid} (${invalidPct}%). Download JSON or press Record again for replay.`
-    );
-    replayHint.style.display = "block";
+    setStatus("Stopped", `Frames: ${recorded.length}. Download JSON.`);
   }
 
   function downloadJSON() {
-    if (!recorded.length) return;
-
-    // (2) pixel → skeleton transition enforced: we export NO pixels, ONLY numbers.
     const payload = {
       version: CFG.version,
       created_iso: new Date().toISOString(),
-      tape_set: tapeWasSetByUser,
+      tape_locked: tapeLocked,
       tape_y_norm: tapeYNorm,
       minScore: CFG.minScore,
-      maxInterpGapMs: CFG.maxInterpGapMs,
       key_order: KEY_ORDER,
       frames: recorded
     };
@@ -685,31 +523,15 @@
     a.remove();
 
     URL.revokeObjectURL(url);
-    setStatus("Downloaded", "JSON saved. No camera pixels were stored.");
+    setStatus("Downloaded", "JSON saved. No camera pixels stored.");
   }
 
-  // -----------------------------
-  // Wiring
-  // -----------------------------
-  btnCam.addEventListener("click", startCamera);
-
-  btnTape.addEventListener("click", () => {
-    if (!detector) return;
-    btnTape.textContent = "Tap Tape Line Now";
-    enterTapeSetMode();
-  });
-
+  btnCam.addEventListener("click", startCameraRear);
   btnRecord.addEventListener("click", startRecording);
   btnStop.addEventListener("click", stopRecording);
   btnDownload.addEventListener("click", downloadJSON);
 
-  // Tap on stage to set tape Y (DOM mapped)
-  stage.addEventListener("click", onStageTap);
-  stage.addEventListener("touchstart", onStageTap, { passive:true });
-
-  window.addEventListener("resize", () => resizeCanvasToVideo());
-
-  setStatus("Idle", "Press Start Camera.");
+  setStatus("Idle", "Press Start Camera (Rear).");
 })();
 </script>
 </body>
