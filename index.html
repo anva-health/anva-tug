@@ -61,7 +61,6 @@ button{
   background:#0b5ed7;
   color:white;
 }
-
 button:disabled{ background:#9bb7e9; }
 
 .ok{ background:#198754; }
@@ -109,14 +108,13 @@ button:disabled{ background:#9bb7e9; }
 </div>
 
 <div id="status">
-  <b>Status:</b> <span id="stText">Idle</span>
+  <b>Status:</b> <span id="stText">Tap blue tape line to calibrate</span>
 </div>
 
 <script>
 (() => {
 
 const MIN_SCORE = 0.35;
-const TAPE_Y_NORM = 0.72;
 
 const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
@@ -135,14 +133,10 @@ const hudFrames = document.getElementById("hudFrames");
 const stText = document.getElementById("stText");
 
 let detector = null;
-let stream = null;
-
+let tapeYNorm = null;
 let mode = "LIVE";
 let recorded = [];
 let recordStartMs = 0;
-
-let replayIdx = 0;
-let replayTimer = null;
 
 function setStatus(t){ stText.textContent = t; }
 
@@ -169,7 +163,8 @@ function updateHUD(time, frames){
 }
 
 function drawTape(){
-  const y = TAPE_Y_NORM * canvas.height;
+  if (tapeYNorm === null) return;
+  const y = tapeYNorm * canvas.height;
   ctx.lineWidth = 4;
   ctx.strokeStyle = "rgba(0,140,255,0.95)";
   ctx.beginPath();
@@ -181,16 +176,28 @@ function drawTape(){
 function drawSkeleton(kps){
   ctx.fillStyle = "rgba(0,255,170,0.9)";
   for (const kp of kps){
-    if (kp.s < MIN_SCORE) continue;
+    if (kp.score < MIN_SCORE) continue;
     ctx.beginPath();
-    ctx.arc(kp.x * canvas.width, kp.y * canvas.height, 4, 0, Math.PI*2);
+    ctx.arc(kp.x, kp.y, 4, 0, Math.PI*2);
     ctx.fill();
   }
 }
 
+canvas.addEventListener("click", (ev) => {
+  if (tapeYNorm !== null) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const y = (ev.clientY - rect.top) / rect.height;
+  tapeYNorm = y;
+
+  btnRecord.disabled = false;
+  setStatus("Tape locked ✔");
+});
+
 async function startCamera(){
   resize();
-  stream = await navigator.mediaDevices.getUserMedia({
+
+  const stream = await navigator.mediaDevices.getUserMedia({
     video:{ facingMode:{ ideal:"environment" }},
     audio:false
   });
@@ -203,10 +210,7 @@ async function startCamera(){
     { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
   );
 
-  btnRecord.disabled = false;
-  btnCam.disabled = true;
-
-  setStatus("Live");
+  setStatus("Tap blue tape line");
   loop();
 }
 
@@ -218,20 +222,14 @@ async function loop(){
 
   drawTape();
 
-  const poses = await detector.estimatePoses(video, { flipHorizontal:false });
+  const poses = await detector.estimatePoses(video);
   const pose = poses[0];
 
   if (pose && pose.keypoints){
-    const kps = pose.keypoints.map(k => ({
-      x: k.x / canvas.width,
-      y: k.y / canvas.height,
-      s: k.score
-    }));
-
-    drawSkeleton(kps);
+    drawSkeleton(pose.keypoints);
 
     if (mode === "RECORDING"){
-      recorded.push({ t_ms: Math.round(nowMs() - recordStartMs), kps });
+      recorded.push({ t_ms: Math.round(nowMs() - recordStartMs), kps: pose.keypoints });
       updateHUD(nowMs() - recordStartMs, recorded.length);
     }
   }
@@ -245,61 +243,38 @@ function startRecording(){
   recorded = [];
   recordStartMs = nowMs();
   mode = "RECORDING";
-
-  btnRecord.disabled = true;
-  btnStop.disabled = false;
-  btnReplay.disabled = true;
-  btnDownload.disabled = true;
-
-  setStatus("Recording");
 }
 
 function stopRecording(){
   mode = "LIVE";
-
-  btnRecord.disabled = false;
-  btnStop.disabled = true;
-  btnReplay.disabled = recorded.length === 0;
-  btnDownload.disabled = recorded.length === 0;
-
-  updateHUD(0, recorded.length);
-  setStatus("Stopped");
+  btnReplay.disabled = false;
+  btnDownload.disabled = false;
 }
 
-function startReplay(){
-  if (!recorded.length) return;
-
+function replay(){
+  let i = 0;
   mode = "REPLAY";
-  replayIdx = 0;
 
-  btnRecord.disabled = true;
-  btnReplay.disabled = true;
-
-  replayTimer = setInterval(() => {
+  const timer = setInterval(() => {
     resize();
     ctx.clearRect(0,0,canvas.width,canvas.height);
 
     drawTape();
 
-    const frame = recorded[replayIdx];
-    if (!frame){
-      clearInterval(replayTimer);
+    if (!recorded[i]){
+      clearInterval(timer);
       mode = "LIVE";
-      btnRecord.disabled = false;
-      btnReplay.disabled = false;
       return;
     }
 
-    drawSkeleton(frame.kps);
-    updateHUD(frame.t_ms, replayIdx);
+    drawSkeleton(recorded[i].kps);
+    updateHUD(recorded[i].t_ms, i);
 
-    replayIdx++;
+    i++;
   }, 1000/30);
-
-  setStatus("Replay");
 }
 
-function downloadJSON(){
+function download(){
   const blob = new Blob([JSON.stringify({frames:recorded})]);
   const url = URL.createObjectURL(blob);
 
@@ -314,8 +289,8 @@ function downloadJSON(){
 btnCam.onclick = startCamera;
 btnRecord.onclick = startRecording;
 btnStop.onclick = stopRecording;
-btnReplay.onclick = startReplay;
-btnDownload.onclick = downloadJSON;
+btnReplay.onclick = replay;
+btnDownload.onclick = download;
 
 })();
 </script>
