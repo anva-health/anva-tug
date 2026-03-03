@@ -3,105 +3,100 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>ANVA TUG</title>
+  <title>ANVA TUG 2.0</title>
 
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
 
   <style>
-    body {
-      margin: 0;
-      padding: 14px 12px 24px;
+    body{
+      margin:0;
+      padding:16px 12px 24px;
       font-family: Arial, sans-serif;
-      background: #111;
-      color: #fff;
-      text-align: center;
+      background:#0f0f10;
+      color:#fff;
+      text-align:center;
+    }
+    h2{ margin:6px 0 10px; font-weight:700; letter-spacing:0.5px; }
+
+    #viewport{
+      position:relative;
+      width:min(92vw, 520px);
+      aspect-ratio: 3 / 4;
+      margin:10px auto 10px;
+      border-radius:18px;
+      overflow:hidden;
+      background:#000;
     }
 
-    #viewport {
-      position: relative;
-      width: min(92vw, 520px);
-      aspect-ratio: 3 / 4; /* portrait-ish */
-      margin: 10px auto 12px;
-      border-radius: 18px;
-      overflow: hidden;
-      background: #000;
+    video, canvas{
+      position:absolute;
+      inset:0;
+      width:100%;
+      height:100%;
+      object-fit:cover; /* IMPORTANT */
+    }
+    video{ z-index:1; }
+    canvas{ z-index:2; pointer-events:none; }
+
+    #tapeLine{
+      position:absolute;
+      left:0;
+      width:100%;
+      height:7px;
+      background:#1f57ff;
+      top:55%;
+      z-index:3;
+      opacity:0.92;
     }
 
-    video, canvas {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: cover; /* IMPORTANT: video is cropped to fill */
+    #hud{
+      position:absolute;
+      left:10px;
+      bottom:10px;
+      z-index:4;
+      background:rgba(0,0,0,0.55);
+      padding:10px 12px;
+      border-radius:12px;
+      font-size:14px;
+      text-align:left;
+      line-height:1.25;
+      min-width:170px;
     }
 
-    video { z-index: 1; }
-    canvas { z-index: 2; pointer-events: none; }
-
-    /* Blue tape line that user can drag/tap later */
-    #tapeLine {
-      position: absolute;
-      left: 0;
-      width: 100%;
-      height: 7px;
-      background: #1f57ff;
-      top: 55%;
-      z-index: 3;
-      opacity: 0.9;
+    .row{
+      display:flex;
+      justify-content:center;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-top:10px;
     }
-
-    #hud {
-      position: absolute;
-      left: 10px;
-      bottom: 10px;
-      z-index: 4;
-      background: rgba(0,0,0,0.55);
-      padding: 10px 12px;
-      border-radius: 12px;
-      font-size: 14px;
-      text-align: left;
-      line-height: 1.25;
-      min-width: 170px;
+    button{
+      border:none;
+      border-radius:14px;
+      padding:12px 16px;
+      font-size:16px;
+      font-weight:700;
     }
+    .green{ background:#1bbf6a; color:#fff; }
+    .blue{ background:#5b7cff; color:#fff; }
+    .gray{ background:#444; color:#fff; }
 
-    .row {
-      display: flex;
-      justify-content: center;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-top: 10px;
+    #status{
+      margin-top:10px;
+      font-size:16px;
+      opacity:0.95;
     }
-
-    button {
-      border: none;
-      border-radius: 14px;
-      padding: 12px 16px;
-      font-size: 16px;
-      font-weight: 600;
-    }
-
-    .green { background: #1bbf6a; color: #fff; }
-    .blue  { background: #5b7cff; color: #fff; }
-    .gray  { background: #444; color: #fff; }
-
-    #status {
-      margin-top: 10px;
-      font-size: 16px;
-      opacity: 0.95;
-    }
-
-    #status b { color: #9bd1ff; }
+    #status b{ color:#9bd1ff; }
   </style>
 </head>
 
 <body>
-  <h2 style="margin: 6px 0 10px;">ANVA TUG</h2>
+  <h2>ANVA TUG 2.0</h2>
 
   <div id="viewport">
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas"></canvas>
-
     <div id="tapeLine" title="Blue tape line"></div>
 
     <div id="hud">
@@ -109,23 +104,26 @@
       <div><b>Time:</b> <span id="time">00:00.0</span></div>
       <div><b>Frames:</b> <span id="frames">0</span></div>
       <div><b>Turn:</b> <span id="turn">—</span></div>
+      <div><b>Cam:</b> <span id="cam">—</span></div>
     </div>
   </div>
 
   <div class="row">
     <button class="green" id="btnCam" onclick="startCamera()">Start Camera (Rear)</button>
-    <button class="blue"  id="btnRec" onclick="startRecording()" disabled>Record</button>
-    <button class="gray"  id="btnStop" onclick="stopRecording()" disabled>Stop</button>
+    <button class="blue" id="btnRec" onclick="startRecording()" disabled>Record</button>
+    <button class="gray" id="btnStop" onclick="stopRecording()" disabled>Stop</button>
   </div>
 
   <div class="row">
-    <button class="blue" onclick="downloadJSON()" id="btnJson" disabled>Download JSON</button>
+    <button class="blue" id="btnJson" onclick="downloadJSON()" disabled>Download JSON</button>
   </div>
 
   <div id="status">Status: <b>Start camera</b></div>
 
 <script>
-  // ====== GLOBALS ======
+  // =========================
+  // ELEMENTS
+  // =========================
   const video = document.getElementById('video');
   const canvas = document.getElementById('canvas');
   const ctx = canvas.getContext('2d');
@@ -137,14 +135,20 @@
   const elTime = document.getElementById('time');
   const elFrames = document.getElementById('frames');
   const elTurn = document.getElementById('turn');
+  const elCam = document.getElementById('cam');
   const elStatus = document.getElementById('status');
 
   const btnRec = document.getElementById('btnRec');
   const btnStop = document.getElementById('btnStop');
   const btnJson = document.getElementById('btnJson');
 
+  // =========================
+  // STATE
+  // =========================
   let detector = null;
   let rafId = null;
+
+  let currentStream = null;
 
   let recording = false;
   let startT = null;
@@ -154,35 +158,50 @@
   let turnDetected = false;
   let turnTimeMs = null;
 
-  // MoveNet keypoint names differ across versions; this covers both.
+  // Keypoint name compatibility
   const KP = {
     leftAnkle: ['left_ankle', 'leftAnkle'],
     rightAnkle: ['right_ankle', 'rightAnkle']
   };
 
-  function setStatus(msg) {
+  function setStatus(msg){
     elStatus.innerHTML = `Status: <b>${msg}</b>`;
   }
 
-  function fmtTime(ms) {
+  function fmtTime(ms){
     const s = ms / 1000;
     const m = Math.floor(s / 60);
-    const r = (s - m * 60).toFixed(1).padStart(4, '0');
+    const r = (s - m*60).toFixed(1).padStart(4,'0');
     return `${String(m).padStart(2,'0')}:${r}`;
   }
 
-  function pickKeypoint(pose, names) {
-    for (const n of names) {
+  function pickKeypoint(pose, names){
+    for (const n of names){
       const k = pose.keypoints.find(x => x.name === n);
       if (k) return k;
     }
     return null;
   }
 
-  // ====== CRITICAL: CANVAS + VIDEO GEOMETRY ======
-  // We display video with object-fit: cover, meaning it can be cropped.
-  // We must map video pixel coords -> canvas CSS coords using "cover" math.
-  function getCoverMapping() {
+  // =========================
+  // CANVAS RESIZE (draw in CSS pixels)
+  // =========================
+  function resizeCanvasToViewport(){
+    const rect = viewport.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+
+    canvas.width  = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+
+    // Draw using CSS pixel coords
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  // =========================
+  // OBJECT-FIT:COVER MAPPING
+  // (video pixel coords <-> viewport CSS coords)
+  // =========================
+  function getCoverMapping(){
     const vw = video.videoWidth;
     const vh = video.videoHeight;
     if (!vw || !vh) return null;
@@ -191,59 +210,103 @@
     const cw = rect.width;
     const ch = rect.height;
 
-    // object-fit: cover scaling
     const scale = Math.max(cw / vw, ch / vh);
     const dispW = vw * scale;
     const dispH = vh * scale;
 
-    // Cropping offsets (in CSS pixels)
     const offsetX = (dispW - cw) / 2;
     const offsetY = (dispH - ch) / 2;
 
-    return { vw, vh, cw, ch, scale, dispW, dispH, offsetX, offsetY };
+    return { vw, vh, cw, ch, scale, offsetX, offsetY };
   }
 
-  // Map video pixel -> canvas CSS pixel
-  function v2c(xv, yv, map) {
-    // scaled position in CSS pixels minus crop offset
-    const xc = xv * map.scale - map.offsetX;
-    const yc = yv * map.scale - map.offsetY;
-    return { x: xc, y: yc };
+  function v2c(xv, yv, map){
+    return {
+      x: xv * map.scale - map.offsetX,
+      y: yv * map.scale - map.offsetY
+    };
   }
 
-  // Map canvas CSS pixel -> video pixel (for tape line)
-  function c2v(xc, yc, map) {
-    const xv = (xc + map.offsetX) / map.scale;
-    const yv = (yc + map.offsetY) / map.scale;
-    return { x: xv, y: yv };
+  function c2v(xc, yc, map){
+    return {
+      x: (xc + map.offsetX) / map.scale,
+      y: (yc + map.offsetY) / map.scale
+    };
   }
 
-  function resizeCanvasToViewport() {
-    // Make canvas match CSS box so drawing aligns perfectly
-    const rect = viewport.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-
-    canvas.width = Math.round(rect.width * dpr);
-    canvas.height = Math.round(rect.height * dpr);
-
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // draw in CSS pixels
+  // =========================
+  // CAMERA: FORCE REAR
+  // =========================
+  async function stopStream(){
+    if (currentStream){
+      currentStream.getTracks().forEach(t => t.stop());
+      currentStream = null;
+    }
+    video.srcObject = null;
   }
 
-  // ====== CAMERA + MODEL ======
-  async function startCamera() {
+  async function getRearCameraStream(){
+    // A) Hard force rear
+    try{
+      const s = await navigator.mediaDevices.getUserMedia({
+        audio:false,
+        video:{ facingMode: { exact: "environment" } }
+      });
+      elCam.textContent = "rear (exact)";
+      return s;
+    } catch(e){
+      // continue to fallback
+    }
+
+    // B) Soft preference rear
+    try{
+      const s = await navigator.mediaDevices.getUserMedia({
+        audio:false,
+        video:{ facingMode: { ideal: "environment" } }
+      });
+      elCam.textContent = "rear (ideal)";
+      return s;
+    } catch(e){
+      // continue to enumerate
+    }
+
+    // C) Enumerate and pick a likely rear camera by label/deviceId
+    // NOTE: labels may be empty until a permission grant.
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cams = devices.filter(d => d.kind === "videoinput");
+    if (!cams.length) throw new Error("No cameras found");
+
+    const rear = cams.find(d => /back|rear|environment/i.test(d.label));
+    const pick = rear || cams[cams.length - 1];
+
+    const s = await navigator.mediaDevices.getUserMedia({
+      audio:false,
+      video:{ deviceId: { exact: pick.deviceId } }
+    });
+    elCam.textContent = rear ? "rear (deviceId)" : "picked (deviceId)";
+    return s;
+  }
+
+  async function startCamera(){
     setStatus("Starting camera…");
 
-    // Rear camera on iPhone: facingMode exact is best
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: {
-        facingMode: { ideal: "environment" }
-      }
-    });
+    // stop old stream first (Safari will otherwise reuse last camera)
+    await stopStream();
 
+    // Get stream (forced rear)
+    let stream;
+    try{
+      stream = await getRearCameraStream();
+    } catch(err){
+      setStatus("Camera failed. Check permissions.");
+      console.error(err);
+      return;
+    }
+
+    currentStream = stream;
     video.srcObject = stream;
 
-    // Wait for true video dimensions (videoWidth/videoHeight)
+    // Wait for video dimensions
     await new Promise(resolve => {
       video.onloadedmetadata = () => resolve();
     });
@@ -252,7 +315,6 @@
     window.addEventListener('resize', resizeCanvasToViewport);
 
     setStatus("Loading MoveNet…");
-
     const model = poseDetection.SupportedModels.MoveNet;
     detector = await poseDetection.createDetector(model, {
       modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING
@@ -266,40 +328,38 @@
     loop();
   }
 
-  // ====== MAIN LOOP ======
-  async function loop() {
+  // =========================
+  // LOOP
+  // =========================
+  async function loop(){
     rafId = requestAnimationFrame(loop);
     if (!detector) return;
 
-    const poses = await detector.estimatePoses(video, { flipHorizontal: false });
+    const poses = await detector.estimatePoses(video, { flipHorizontal:false });
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     const map = getCoverMapping();
     if (!map) return;
 
-    if (poses && poses.length) {
+    if (poses && poses.length){
       const pose = poses[0];
       drawPose(pose, map);
-
       if (recording) processPose(pose, map);
     }
 
-    if (recording && startT != null) {
+    if (recording && startT != null){
       const t = performance.now() - startT;
       elTime.textContent = fmtTime(t);
       elFrames.textContent = String(frameCount);
     }
   }
 
-  function drawPose(pose, map) {
-    // Draw keypoints in correct space
-    for (const k of pose.keypoints) {
+  function drawPose(pose, map){
+    for (const k of pose.keypoints){
       if (k.score != null && k.score < 0.35) continue;
 
       const p = v2c(k.x, k.y, map);
-
-      // Only draw points that are inside viewport (after crop)
-      if (p.x < -20 || p.x > map.cw + 20 || p.y < -20 || p.y > map.ch + 20) continue;
+      if (p.x < -30 || p.x > map.cw + 30 || p.y < -30 || p.y > map.ch + 30) continue;
 
       ctx.beginPath();
       ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
@@ -308,8 +368,10 @@
     }
   }
 
-  // ====== RECORDING / TURN DETECTION ======
-  function startRecording() {
+  // =========================
+  // RECORDING + TURN DETECTION
+  // =========================
+  function startRecording(){
     if (!detector) return;
 
     recording = true;
@@ -325,75 +387,72 @@
     btnStop.disabled = false;
     btnJson.disabled = true;
 
-    setStatus("Recording… Walk and cross the blue tape line.");
     elMode.textContent = "REC";
     elTime.textContent = "00:00.0";
     elFrames.textContent = "0";
+
+    setStatus("Recording… Cross the blue tape.");
   }
 
-  function stopRecording() {
+  function stopRecording(){
     recording = false;
+
     btnRec.disabled = false;
     btnStop.disabled = true;
     btnJson.disabled = keypointsLog.length === 0;
 
-    setStatus("Stopped. You can download JSON.");
     elMode.textContent = "LIVE";
+    setStatus("Stopped. Download JSON if needed.");
   }
 
-  function processPose(pose, map) {
+  function processPose(pose, map){
     const t = performance.now() - startT;
     frameCount += 1;
 
-    // Tape line Y in CSS pixels relative to viewport
+    // Tape line Y in CSS pixels within viewport
     const tapeRect = tapeLine.getBoundingClientRect();
     const vpRect = viewport.getBoundingClientRect();
     const tapeY_css = (tapeRect.top - vpRect.top) + (tapeRect.height / 2);
 
-    // Convert tape Y from CSS pixel -> video pixel (so it matches pose coords)
+    // Convert tape Y from CSS px -> video px
     const tapeV = c2v(0, tapeY_css, map);
     const tapeY_video = tapeV.y;
 
     const la = pickKeypoint(pose, KP.leftAnkle);
     const ra = pickKeypoint(pose, KP.rightAnkle);
 
-    // TURN RULE (simple and stable):
-    // first time both ankles cross from one side of tape to the other.
-    // Here: detect when BOTH ankles are "beyond" the tape (you can flip this depending on walk direction)
-    if (!turnDetected && la && ra && (la.score ?? 1) > 0.35 && (ra.score ?? 1) > 0.35) {
+    // TURN RULE: first moment BOTH ankles are past tape (y > tapeY_video)
+    if (!turnDetected && la && ra && (la.score ?? 1) > 0.35 && (ra.score ?? 1) > 0.35){
       const bothPast = (la.y > tapeY_video) && (ra.y > tapeY_video);
-
-      if (bothPast) {
+      if (bothPast){
         turnDetected = true;
         turnTimeMs = t;
         elTurn.textContent = fmtTime(turnTimeMs);
-        console.log("TURN DETECTED (ankles past tape) at ms:", Math.round(turnTimeMs));
+        console.log("TURN DETECTED at ms:", Math.round(turnTimeMs));
       }
     }
 
-    // Log keypoints (video pixel coords, NOT canvas coords)
+    // Log in VIDEO PIXELS (not canvas pixels)
     keypointsLog.push({
       time_ms: t,
       keypoints: pose.keypoints.map(k => ({
         name: k.name,
-        x: k.x,
-        y: k.y,
+        x: k.x, y: k.y,
         score: k.score
       }))
     });
   }
 
-  // ====== JSON DOWNLOAD ======
-  function downloadJSON() {
+  // =========================
+  // JSON DOWNLOAD (SESSION ONLY)
+  // =========================
+  function downloadJSON(){
     const payload = {
       meta: {
         created_at: new Date().toISOString(),
+        camera: elCam.textContent,
         videoWidth: video.videoWidth,
-        videoHeight: video.videoHeight,
-        viewport_css: {
-          width: viewport.getBoundingClientRect().width,
-          height: viewport.getBoundingClientRect().height
-        }
+        videoHeight: video.videoHeight
       },
       turn_time_ms: turnTimeMs,
       frames: keypointsLog
@@ -411,6 +470,9 @@
 
     URL.revokeObjectURL(url);
   }
+
+  // Start in a known UI state
+  setStatus("Start camera");
 </script>
 </body>
 </html>
