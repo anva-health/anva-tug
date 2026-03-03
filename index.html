@@ -1,167 +1,416 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>ANVA TUG 2.0</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>ANVA TUG</title>
+
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+
   <style>
     body {
-      text-align: center;
-      font-family: Arial;
+      margin: 0;
+      padding: 14px 12px 24px;
+      font-family: Arial, sans-serif;
       background: #111;
-      color: white;
+      color: #fff;
+      text-align: center;
     }
 
     #viewport {
       position: relative;
-      display: inline-block;
-      width: 480px;
-      height: 640px;
+      width: min(92vw, 520px);
+      aspect-ratio: 3 / 4; /* portrait-ish */
+      margin: 10px auto 12px;
+      border-radius: 18px;
+      overflow: hidden;
+      background: #000;
     }
 
     video, canvas {
       position: absolute;
-      top: 0;
-      left: 0;
-      width: 480px;
-      height: 640px;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover; /* IMPORTANT: video is cropped to fill */
     }
 
+    video { z-index: 1; }
+    canvas { z-index: 2; pointer-events: none; }
+
+    /* Blue tape line that user can drag/tap later */
     #tapeLine {
       position: absolute;
       left: 0;
       width: 100%;
-      height: 6px;
-      background: blue;
+      height: 7px;
+      background: #1f57ff;
       top: 55%;
-      z-index: 5;
-      cursor: pointer;
+      z-index: 3;
+      opacity: 0.9;
+    }
+
+    #hud {
+      position: absolute;
+      left: 10px;
+      bottom: 10px;
+      z-index: 4;
+      background: rgba(0,0,0,0.55);
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-size: 14px;
+      text-align: left;
+      line-height: 1.25;
+      min-width: 170px;
+    }
+
+    .row {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 10px;
     }
 
     button {
-      margin-top: 15px;
-      padding: 10px 20px;
+      border: none;
+      border-radius: 14px;
+      padding: 12px 16px;
       font-size: 16px;
+      font-weight: 600;
     }
 
+    .green { background: #1bbf6a; color: #fff; }
+    .blue  { background: #5b7cff; color: #fff; }
+    .gray  { background: #444; color: #fff; }
+
+    #status {
+      margin-top: 10px;
+      font-size: 16px;
+      opacity: 0.95;
+    }
+
+    #status b { color: #9bd1ff; }
   </style>
 </head>
 
 <body>
+  <h2 style="margin: 6px 0 10px;">ANVA TUG</h2>
 
-<h2>ANVA TUG 2.0</h2>
+  <div id="viewport">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
 
-<div id="viewport">
-  <video id="video" autoplay playsinline></video>
-  <canvas id="canvas"></canvas>
-  <div id="tapeLine"></div>
-</div>
+    <div id="tapeLine" title="Blue tape line"></div>
 
-<br>
-<button onclick="startCamera()">Start Camera</button>
-<button onclick="startRecording()">Record TUG</button>
+    <div id="hud">
+      <div><b>Mode:</b> <span id="mode">LIVE</span></div>
+      <div><b>Time:</b> <span id="time">00:00.0</span></div>
+      <div><b>Frames:</b> <span id="frames">0</span></div>
+      <div><b>Turn:</b> <span id="turn">—</span></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <button class="green" id="btnCam" onclick="startCamera()">Start Camera (Rear)</button>
+    <button class="blue"  id="btnRec" onclick="startRecording()" disabled>Record</button>
+    <button class="gray"  id="btnStop" onclick="stopRecording()" disabled>Stop</button>
+  </div>
+
+  <div class="row">
+    <button class="blue" onclick="downloadJSON()" id="btnJson" disabled>Download JSON</button>
+  </div>
+
+  <div id="status">Status: <b>Start camera</b></div>
 
 <script>
+  // ====== GLOBALS ======
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
 
-let detector;
-let video = document.getElementById("video");
-let canvas = document.getElementById("canvas");
-let ctx = canvas.getContext("2d");
+  const viewport = document.getElementById('viewport');
+  const tapeLine = document.getElementById('tapeLine');
 
-let recording = false;
-let keypointsLog = [];
-let startTime = null;
-let turnDetected = false;
-let turnTime = null;
+  const elMode = document.getElementById('mode');
+  const elTime = document.getElementById('time');
+  const elFrames = document.getElementById('frames');
+  const elTurn = document.getElementById('turn');
+  const elStatus = document.getElementById('status');
 
-async function startCamera() {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: "user" }
-  });
-  video.srcObject = stream;
+  const btnRec = document.getElementById('btnRec');
+  const btnStop = document.getElementById('btnStop');
+  const btnJson = document.getElementById('btnJson');
 
-  const model = poseDetection.SupportedModels.MoveNet;
-  detector = await poseDetection.createDetector(model);
+  let detector = null;
+  let rafId = null;
 
-  detectPose();
-}
+  let recording = false;
+  let startT = null;
+  let frameCount = 0;
 
-async function detectPose() {
-  if (!detector) return;
+  let keypointsLog = [];
+  let turnDetected = false;
+  let turnTimeMs = null;
 
-  const poses = await detector.estimatePoses(video);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // MoveNet keypoint names differ across versions; this covers both.
+  const KP = {
+    leftAnkle: ['left_ankle', 'leftAnkle'],
+    rightAnkle: ['right_ankle', 'rightAnkle']
+  };
 
-  if (poses.length > 0) {
-    const pose = poses[0];
+  function setStatus(msg) {
+    elStatus.innerHTML = `Status: <b>${msg}</b>`;
+  }
 
-    drawSkeleton(pose);
+  function fmtTime(ms) {
+    const s = ms / 1000;
+    const m = Math.floor(s / 60);
+    const r = (s - m * 60).toFixed(1).padStart(4, '0');
+    return `${String(m).padStart(2,'0')}:${r}`;
+  }
 
-    if (recording) {
-      processPose(pose);
+  function pickKeypoint(pose, names) {
+    for (const n of names) {
+      const k = pose.keypoints.find(x => x.name === n);
+      if (k) return k;
+    }
+    return null;
+  }
+
+  // ====== CRITICAL: CANVAS + VIDEO GEOMETRY ======
+  // We display video with object-fit: cover, meaning it can be cropped.
+  // We must map video pixel coords -> canvas CSS coords using "cover" math.
+  function getCoverMapping() {
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh) return null;
+
+    const rect = viewport.getBoundingClientRect();
+    const cw = rect.width;
+    const ch = rect.height;
+
+    // object-fit: cover scaling
+    const scale = Math.max(cw / vw, ch / vh);
+    const dispW = vw * scale;
+    const dispH = vh * scale;
+
+    // Cropping offsets (in CSS pixels)
+    const offsetX = (dispW - cw) / 2;
+    const offsetY = (dispH - ch) / 2;
+
+    return { vw, vh, cw, ch, scale, dispW, dispH, offsetX, offsetY };
+  }
+
+  // Map video pixel -> canvas CSS pixel
+  function v2c(xv, yv, map) {
+    // scaled position in CSS pixels minus crop offset
+    const xc = xv * map.scale - map.offsetX;
+    const yc = yv * map.scale - map.offsetY;
+    return { x: xc, y: yc };
+  }
+
+  // Map canvas CSS pixel -> video pixel (for tape line)
+  function c2v(xc, yc, map) {
+    const xv = (xc + map.offsetX) / map.scale;
+    const yv = (yc + map.offsetY) / map.scale;
+    return { x: xv, y: yv };
+  }
+
+  function resizeCanvasToViewport() {
+    // Make canvas match CSS box so drawing aligns perfectly
+    const rect = viewport.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // draw in CSS pixels
+  }
+
+  // ====== CAMERA + MODEL ======
+  async function startCamera() {
+    setStatus("Starting camera…");
+
+    // Rear camera on iPhone: facingMode exact is best
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        facingMode: { ideal: "environment" }
+      }
+    });
+
+    video.srcObject = stream;
+
+    // Wait for true video dimensions (videoWidth/videoHeight)
+    await new Promise(resolve => {
+      video.onloadedmetadata = () => resolve();
+    });
+
+    resizeCanvasToViewport();
+    window.addEventListener('resize', resizeCanvasToViewport);
+
+    setStatus("Loading MoveNet…");
+
+    const model = poseDetection.SupportedModels.MoveNet;
+    detector = await poseDetection.createDetector(model, {
+      modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING
+    });
+
+    setStatus("Ready. Press Record.");
+    btnRec.disabled = false;
+    elMode.textContent = "LIVE";
+
+    if (rafId) cancelAnimationFrame(rafId);
+    loop();
+  }
+
+  // ====== MAIN LOOP ======
+  async function loop() {
+    rafId = requestAnimationFrame(loop);
+    if (!detector) return;
+
+    const poses = await detector.estimatePoses(video, { flipHorizontal: false });
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const map = getCoverMapping();
+    if (!map) return;
+
+    if (poses && poses.length) {
+      const pose = poses[0];
+      drawPose(pose, map);
+
+      if (recording) processPose(pose, map);
+    }
+
+    if (recording && startT != null) {
+      const t = performance.now() - startT;
+      elTime.textContent = fmtTime(t);
+      elFrames.textContent = String(frameCount);
     }
   }
 
-  requestAnimationFrame(detectPose);
-}
+  function drawPose(pose, map) {
+    // Draw keypoints in correct space
+    for (const k of pose.keypoints) {
+      if (k.score != null && k.score < 0.35) continue;
 
-function drawSkeleton(pose) {
-  ctx.fillStyle = "lime";
+      const p = v2c(k.x, k.y, map);
 
-  pose.keypoints.forEach(k => {
-    if (k.score > 0.4) {
+      // Only draw points that are inside viewport (after crop)
+      if (p.x < -20 || p.x > map.cw + 20 || p.y < -20 || p.y > map.ch + 20) continue;
+
       ctx.beginPath();
-      ctx.arc(k.x, k.y, 5, 0, 2 * Math.PI);
+      ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+      ctx.fillStyle = "#2bff5a";
       ctx.fill();
     }
-  });
-}
-
-function startRecording() {
-  recording = true;
-  keypointsLog = [];
-  startTime = performance.now();
-  turnDetected = false;
-  turnTime = null;
-}
-
-function processPose(pose) {
-
-  const timestamp = performance.now() - startTime;
-
-  const leftAnkle = pose.keypoints.find(k => k.name === "left_ankle");
-  const rightAnkle = pose.keypoints.find(k => k.name === "right_ankle");
-
-  const tape = document.getElementById("tapeLine");
-  const tapeRect = tape.getBoundingClientRect();
-  const videoRect = video.getBoundingClientRect();
-
-  const tapeY = tapeRect.top - videoRect.top;
-
-  if (!turnDetected && leftAnkle && rightAnkle) {
-
-    if (
-      (leftAnkle.y < tapeY && rightAnkle.y < tapeY)
-    ) {
-      turnDetected = true;
-      turnTime = timestamp;
-      console.log("TURN DETECTED at:", turnTime);
-    }
   }
 
-  keypointsLog.push({
-    time: timestamp,
-    keypoints: pose.keypoints
-  });
-}
+  // ====== RECORDING / TURN DETECTION ======
+  function startRecording() {
+    if (!detector) return;
 
-window.addEventListener("resize", () => {
-  canvas.width = video.clientWidth;
-  canvas.height = video.clientHeight;
-});
+    recording = true;
+    startT = performance.now();
+    frameCount = 0;
+    keypointsLog = [];
 
+    turnDetected = false;
+    turnTimeMs = null;
+    elTurn.textContent = "—";
+
+    btnRec.disabled = true;
+    btnStop.disabled = false;
+    btnJson.disabled = true;
+
+    setStatus("Recording… Walk and cross the blue tape line.");
+    elMode.textContent = "REC";
+    elTime.textContent = "00:00.0";
+    elFrames.textContent = "0";
+  }
+
+  function stopRecording() {
+    recording = false;
+    btnRec.disabled = false;
+    btnStop.disabled = true;
+    btnJson.disabled = keypointsLog.length === 0;
+
+    setStatus("Stopped. You can download JSON.");
+    elMode.textContent = "LIVE";
+  }
+
+  function processPose(pose, map) {
+    const t = performance.now() - startT;
+    frameCount += 1;
+
+    // Tape line Y in CSS pixels relative to viewport
+    const tapeRect = tapeLine.getBoundingClientRect();
+    const vpRect = viewport.getBoundingClientRect();
+    const tapeY_css = (tapeRect.top - vpRect.top) + (tapeRect.height / 2);
+
+    // Convert tape Y from CSS pixel -> video pixel (so it matches pose coords)
+    const tapeV = c2v(0, tapeY_css, map);
+    const tapeY_video = tapeV.y;
+
+    const la = pickKeypoint(pose, KP.leftAnkle);
+    const ra = pickKeypoint(pose, KP.rightAnkle);
+
+    // TURN RULE (simple and stable):
+    // first time both ankles cross from one side of tape to the other.
+    // Here: detect when BOTH ankles are "beyond" the tape (you can flip this depending on walk direction)
+    if (!turnDetected && la && ra && (la.score ?? 1) > 0.35 && (ra.score ?? 1) > 0.35) {
+      const bothPast = (la.y > tapeY_video) && (ra.y > tapeY_video);
+
+      if (bothPast) {
+        turnDetected = true;
+        turnTimeMs = t;
+        elTurn.textContent = fmtTime(turnTimeMs);
+        console.log("TURN DETECTED (ankles past tape) at ms:", Math.round(turnTimeMs));
+      }
+    }
+
+    // Log keypoints (video pixel coords, NOT canvas coords)
+    keypointsLog.push({
+      time_ms: t,
+      keypoints: pose.keypoints.map(k => ({
+        name: k.name,
+        x: k.x,
+        y: k.y,
+        score: k.score
+      }))
+    });
+  }
+
+  // ====== JSON DOWNLOAD ======
+  function downloadJSON() {
+    const payload = {
+      meta: {
+        created_at: new Date().toISOString(),
+        videoWidth: video.videoWidth,
+        videoHeight: video.videoHeight,
+        viewport_css: {
+          width: viewport.getBoundingClientRect().width,
+          height: viewport.getBoundingClientRect().height
+        }
+      },
+      turn_time_ms: turnTimeMs,
+      frames: keypointsLog
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "ANVA_TUG_keypoints.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    URL.revokeObjectURL(url);
+  }
 </script>
-
 </body>
 </html>
