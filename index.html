@@ -1,312 +1,251 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ANVA Balance Games</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      text-align: center;
-      background: #f4f7fb;
-      margin: 0;
-      padding: 20px;
-    }
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ANVA Balance Trainer</title>
 
-    h1 {
-      margin-bottom: 10px;
-    }
+<style>
 
-    .menu {
-      margin: 20px 0;
-    }
+body{
+font-family:Arial;
+text-align:center;
+background:#f5f6f7;
+}
 
-    button {
-      padding: 12px 18px;
-      margin: 6px;
-      font-size: 16px;
-      border: none;
-      border-radius: 10px;
-      cursor: pointer;
-    }
+button{
+padding:12px 18px;
+margin:6px;
+font-size:16px;
+border-radius:10px;
+border:none;
+}
 
-    .primary {
-      background: #111;
-      color: white;
-    }
+#arena{
+width:320px;
+height:320px;
+background:white;
+border:3px solid black;
+margin:auto;
+position:relative;
+}
 
-    .game-btn {
-      background: #dfe7f3;
-    }
+#dot{
+width:18px;
+height:18px;
+background:red;
+border-radius:50%;
+position:absolute;
+left:150px;
+top:150px;
+}
 
-    #status {
-      margin: 10px 0 20px;
-      font-weight: bold;
-    }
+#circle{
+width:200px;
+height:200px;
+border:4px solid black;
+border-radius:50%;
+position:absolute;
+left:60px;
+top:60px;
+}
 
-    #gameArea {
-      width: 340px;
-      height: 420px;
-      margin: 0 auto;
-      background: white;
-      border-radius: 16px;
-      box-shadow: 0 4px 14px rgba(0,0,0,0.08);
-      position: relative;
-      overflow: hidden;
-    }
+.target{
+width:26px;
+height:26px;
+background:blue;
+border-radius:50%;
+position:absolute;
+}
 
-    #circle {
-      width: 240px;
-      height: 240px;
-      border: 4px solid #222;
-      border-radius: 50%;
-      position: absolute;
-      top: 80px;
-      left: 50px;
-      display: none;
-    }
+.path{
+position:absolute;
+background:#ddd;
+}
 
-    #dot {
-      width: 20px;
-      height: 20px;
-      background: red;
-      border-radius: 50%;
-      position: absolute;
-      left: 160px;
-      top: 190px;
-      display: none;
-    }
-
-    #target {
-      width: 28px;
-      height: 28px;
-      background: #1a73e8;
-      border-radius: 50%;
-      position: absolute;
-      display: none;
-    }
-
-    #mazeBox {
-      width: 260px;
-      height: 260px;
-      border: 4px solid #222;
-      position: absolute;
-      top: 70px;
-      left: 40px;
-      display: none;
-      background:
-        linear-gradient(to right, transparent 32%, #ccc 32%, #ccc 36%, transparent 36%, transparent 64%, #ccc 64%, #ccc 68%, transparent 68%),
-        linear-gradient(to bottom, transparent 32%, #ccc 32%, #ccc 36%, transparent 36%, transparent 64%, #ccc 64%, #ccc 68%, transparent 68%);
-    }
-
-    #ball {
-      width: 18px;
-      height: 18px;
-      background: green;
-      border-radius: 50%;
-      position: absolute;
-      left: 50px;
-      top: 80px;
-      display: none;
-    }
-
-    #score {
-      margin-top: 12px;
-      font-size: 18px;
-      font-weight: bold;
-    }
-
-    #instructions {
-      max-width: 500px;
-      margin: 0 auto 10px;
-      color: #444;
-    }
-  </style>
+</style>
 </head>
+
 <body>
-  <h1>ANVA Balance Games</h1>
-  <div id="instructions">Use iPhone Safari. Tap Enable Motion first. Put the phone in the front pocket.</div>
 
-  <div class="menu">
-    <button class="primary" onclick="enableMotion()">Enable Motion</button>
-    <button class="game-btn" onclick="startGame('dot')">1. Center the Dot</button>
-    <button class="game-btn" onclick="startGame('target')">2. Lean to Targets</button>
-    <button class="game-btn" onclick="startGame('maze')">3. Sway Maze</button>
-  </div>
+<h1>ANVA Balance Trainer</h1>
 
-  <div id="status">Motion not enabled</div>
-  <div id="score">Score: 0</div>
+<button onclick="enableMotion()">Enable Motion</button>
 
-  <div id="gameArea">
-    <div id="circle"></div>
-    <div id="dot"></div>
-    <div id="target"></div>
-    <div id="mazeBox"></div>
-    <div id="ball"></div>
-  </div>
+<br><br>
 
-  <script>
-    let tiltX = 0;
-    let tiltY = 0;
-    let currentGame = null;
-    let score = 0;
-    let targetHitCooldown = false;
+<button onclick="startStability()">1 Stability Hold</button>
+<button onclick="startTargets()">2 Direction Targets</button>
+<button onclick="startPath()">3 Path Follow</button>
 
-    const dot = document.getElementById("dot");
-    const circle = document.getElementById("circle");
-    const target = document.getElementById("target");
-    const mazeBox = document.getElementById("mazeBox");
-    const ball = document.getElementById("ball");
-    const statusEl = document.getElementById("status");
-    const scoreEl = document.getElementById("score");
+<h3 id="score">Score: 0</h3>
 
-    function hideAllGames() {
-      circle.style.display = "none";
-      dot.style.display = "none";
-      target.style.display = "none";
-      mazeBox.style.display = "none";
-      ball.style.display = "none";
-    }
+<div id="arena">
 
-    function resetScore() {
-      score = 0;
-      scoreEl.textContent = "Score: " + score;
-    }
+<div id="circle"></div>
+<div id="dot"></div>
 
-    function startGame(game) {
-      currentGame = game;
-      hideAllGames();
-      resetScore();
+</div>
 
-      if (game === "dot") {
-        circle.style.display = "block";
-        dot.style.display = "block";
-        statusEl.textContent = "Game 1: Keep the red dot inside the circle";
-      }
+<script>
 
-      if (game === "target") {
-        circle.style.display = "block";
-        dot.style.display = "block";
-        target.style.display = "block";
-        spawnTarget();
-        statusEl.textContent = "Game 2: Lean to move the red dot onto the blue target";
-      }
+let tiltX=0
+let tiltY=0
+let game="none"
+let score=0
 
-      if (game === "maze") {
-        mazeBox.style.display = "block";
-        ball.style.display = "block";
-        ball.style.left = "50px";
-        ball.style.top = "80px";
-        statusEl.textContent = "Game 3: Use body sway to move the green ball through the maze";
-      }
-    }
+let dot=document.getElementById("dot")
 
-    function enableMotion() {
-      if (typeof DeviceMotionEvent !== "undefined" &&
-          typeof DeviceMotionEvent.requestPermission === "function") {
-        DeviceMotionEvent.requestPermission()
-          .then(permissionState => {
-            if (permissionState === "granted") {
-              window.addEventListener("devicemotion", handleMotion);
-              statusEl.textContent = "Motion enabled";
-            } else {
-              statusEl.textContent = "Motion permission denied";
-            }
-          })
-          .catch(() => {
-            statusEl.textContent = "Motion permission error";
-          });
-      } else {
-        window.addEventListener("devicemotion", handleMotion);
-        statusEl.textContent = "Motion enabled";
-      }
-    }
+function enableMotion(){
 
-    function handleMotion(event) {
-      const ax = event.accelerationIncludingGravity?.x || 0;
-      const ay = event.accelerationIncludingGravity?.y || 0;
+if(typeof DeviceMotionEvent.requestPermission==="function"){
 
-      tiltX = ax;
-      tiltY = ay;
+DeviceMotionEvent.requestPermission().then(permission=>{
 
-      updateGame();
-    }
+if(permission==="granted"){
+window.addEventListener("devicemotion",handleMotion)
+}
 
-    function updateGame() {
-      if (currentGame === "dot" || currentGame === "target") {
-        let x = 160 + tiltX * 12;
-        let y = 190 + tiltY * 12;
+})
 
-        x = Math.max(50, Math.min(270, x));
-        y = Math.max(80, Math.min(300, y));
+}else{
 
-        dot.style.left = x + "px";
-        dot.style.top = y + "px";
+window.addEventListener("devicemotion",handleMotion)
 
-        if (currentGame === "dot") {
-          const cx = 170;
-          const cy = 200;
-          const dx = x - cx;
-          const dy = y - cy;
-          const dist = Math.sqrt(dx * dx + dy * dy);
+}
 
-          if (dist < 110) {
-            score += 1;
-            scoreEl.textContent = "Score: " + score;
-          }
-        }
+}
 
-        if (currentGame === "target") {
-          checkTargetHit(x, y);
-        }
-      }
+function handleMotion(e){
 
-      if (currentGame === "maze") {
-        let x = parseFloat(ball.style.left || "50");
-        let y = parseFloat(ball.style.top || "80");
+tiltX=e.accelerationIncludingGravity.x
+tiltY=e.accelerationIncludingGravity.y
 
-        x += tiltX * 1.5;
-        y += tiltY * 1.5;
+update()
 
-        x = Math.max(40, Math.min(280, x));
-        y = Math.max(70, Math.min(310, y));
+}
 
-        ball.style.left = x + "px";
-        ball.style.top = y + "px";
+function update(){
 
-        if (x > 250 && y > 280) {
-          score = 100;
-          scoreEl.textContent = "Score: " + score + " - Maze complete";
-        }
-      }
-    }
+let x=150 + tiltX*12
+let y=150 + tiltY*12
 
-    function spawnTarget() {
-      const tx = 70 + Math.random() * 180;
-      const ty = 100 + Math.random() * 180;
-      target.style.left = tx + "px";
-      target.style.top = ty + "px";
-    }
+x=Math.max(0,Math.min(300,x))
+y=Math.max(0,Math.min(300,y))
 
-    function checkTargetHit(dotX, dotY) {
-      if (targetHitCooldown) return;
+dot.style.left=x+"px"
+dot.style.top=y+"px"
 
-      const tx = parseFloat(target.style.left) + 14;
-      const ty = parseFloat(target.style.top) + 14;
-      const dx = dotX - tx;
-      const dy = dotY - ty;
-      const dist = Math.sqrt(dx * dx + dy * dy);
+if(game==="stability"){
 
-      if (dist < 22) {
-        score += 10;
-        scoreEl.textContent = "Score: " + score;
-        targetHitCooldown = true;
-        spawnTarget();
-        setTimeout(() => {
-          targetHitCooldown = false;
-        }, 500);
-      }
-    }
-  </script>
+let dx=x-150
+let dy=y-150
+
+let dist=Math.sqrt(dx*dx+dy*dy)
+
+if(dist<90){
+score++
+document.getElementById("score").innerText="Score: "+score
+}
+
+}
+
+if(game==="targets"){
+checkTargets(x,y)
+}
+
+if(game==="path"){
+checkPath(x,y)
+}
+
+}
+
+function startStability(){
+
+game="stability"
+score=0
+
+document.getElementById("arena").innerHTML='\
+<div id="circle"></div>\
+<div id="dot"></div>'
+
+dot=document.getElementById("dot")
+
+}
+
+let targetX
+let targetY
+
+function startTargets(){
+
+game="targets"
+score=0
+
+document.getElementById("arena").innerHTML='<div id="dot"></div>'
+
+dot=document.getElementById("dot")
+
+spawnTarget()
+
+}
+
+function spawnTarget(){
+
+targetX=Math.random()*260
+targetY=Math.random()*260
+
+let t=document.createElement("div")
+t.className="target"
+t.style.left=targetX+"px"
+t.style.top=targetY+"px"
+
+document.getElementById("arena").appendChild(t)
+
+}
+
+function checkTargets(x,y){
+
+let dx=x-targetX
+let dy=y-targetY
+
+if(Math.sqrt(dx*dx+dy*dy)<25){
+
+score+=10
+document.getElementById("score").innerText="Score: "+score
+
+document.querySelector(".target").remove()
+
+spawnTarget()
+
+}
+
+}
+
+function startPath(){
+
+game="path"
+score=0
+
+document.getElementById("arena").innerHTML='\
+<div id="dot"></div>\
+<div class="path" style="left:0;top:140;width:320px;height:40px"></div>'
+
+dot=document.getElementById("dot")
+
+}
+
+function checkPath(x,y){
+
+if(y>140 && y<180){
+score++
+}else{
+score--
+}
+
+document.getElementById("score").innerText="Score: "+score
+
+}
+
+</script>
+
 </body>
 </html>
