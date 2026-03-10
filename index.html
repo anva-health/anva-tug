@@ -2,477 +2,311 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>ANVA TUG 2.0</title>
-
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
-
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ANVA Balance Games</title>
   <style>
-    body{
-      margin:0;
-      padding:16px 12px 24px;
+    body {
       font-family: Arial, sans-serif;
-      background:#0f0f10;
-      color:#fff;
-      text-align:center;
-    }
-    h2{ margin:6px 0 10px; font-weight:700; letter-spacing:0.5px; }
-
-    #viewport{
-      position:relative;
-      width:min(92vw, 520px);
-      aspect-ratio: 3 / 4;
-      margin:10px auto 10px;
-      border-radius:18px;
-      overflow:hidden;
-      background:#000;
+      text-align: center;
+      background: #f4f7fb;
+      margin: 0;
+      padding: 20px;
     }
 
-    video, canvas{
-      position:absolute;
-      inset:0;
-      width:100%;
-      height:100%;
-      object-fit:cover; /* IMPORTANT */
-    }
-    video{ z-index:1; }
-    canvas{ z-index:2; pointer-events:none; }
-
-    #tapeLine{
-      position:absolute;
-      left:0;
-      width:100%;
-      height:7px;
-      background:#1f57ff;
-      top:55%;
-      z-index:3;
-      opacity:0.92;
+    h1 {
+      margin-bottom: 10px;
     }
 
-    #hud{
-      position:absolute;
-      left:10px;
-      bottom:10px;
-      z-index:4;
-      background:rgba(0,0,0,0.55);
-      padding:10px 12px;
-      border-radius:12px;
-      font-size:14px;
-      text-align:left;
-      line-height:1.25;
-      min-width:170px;
+    .menu {
+      margin: 20px 0;
     }
 
-    .row{
-      display:flex;
-      justify-content:center;
-      gap:10px;
-      flex-wrap:wrap;
-      margin-top:10px;
+    button {
+      padding: 12px 18px;
+      margin: 6px;
+      font-size: 16px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
     }
-    button{
-      border:none;
-      border-radius:14px;
-      padding:12px 16px;
-      font-size:16px;
-      font-weight:700;
-    }
-    .green{ background:#1bbf6a; color:#fff; }
-    .blue{ background:#5b7cff; color:#fff; }
-    .gray{ background:#444; color:#fff; }
 
-    #status{
-      margin-top:10px;
-      font-size:16px;
-      opacity:0.95;
+    .primary {
+      background: #111;
+      color: white;
     }
-    #status b{ color:#9bd1ff; }
+
+    .game-btn {
+      background: #dfe7f3;
+    }
+
+    #status {
+      margin: 10px 0 20px;
+      font-weight: bold;
+    }
+
+    #gameArea {
+      width: 340px;
+      height: 420px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+      position: relative;
+      overflow: hidden;
+    }
+
+    #circle {
+      width: 240px;
+      height: 240px;
+      border: 4px solid #222;
+      border-radius: 50%;
+      position: absolute;
+      top: 80px;
+      left: 50px;
+      display: none;
+    }
+
+    #dot {
+      width: 20px;
+      height: 20px;
+      background: red;
+      border-radius: 50%;
+      position: absolute;
+      left: 160px;
+      top: 190px;
+      display: none;
+    }
+
+    #target {
+      width: 28px;
+      height: 28px;
+      background: #1a73e8;
+      border-radius: 50%;
+      position: absolute;
+      display: none;
+    }
+
+    #mazeBox {
+      width: 260px;
+      height: 260px;
+      border: 4px solid #222;
+      position: absolute;
+      top: 70px;
+      left: 40px;
+      display: none;
+      background:
+        linear-gradient(to right, transparent 32%, #ccc 32%, #ccc 36%, transparent 36%, transparent 64%, #ccc 64%, #ccc 68%, transparent 68%),
+        linear-gradient(to bottom, transparent 32%, #ccc 32%, #ccc 36%, transparent 36%, transparent 64%, #ccc 64%, #ccc 68%, transparent 68%);
+    }
+
+    #ball {
+      width: 18px;
+      height: 18px;
+      background: green;
+      border-radius: 50%;
+      position: absolute;
+      left: 50px;
+      top: 80px;
+      display: none;
+    }
+
+    #score {
+      margin-top: 12px;
+      font-size: 18px;
+      font-weight: bold;
+    }
+
+    #instructions {
+      max-width: 500px;
+      margin: 0 auto 10px;
+      color: #444;
+    }
   </style>
 </head>
-
 <body>
-  <h2>ANVA TUG 2.0</h2>
+  <h1>ANVA Balance Games</h1>
+  <div id="instructions">Use iPhone Safari. Tap Enable Motion first. Put the phone in the front pocket.</div>
 
-  <div id="viewport">
-    <video id="video" autoplay playsinline muted></video>
-    <canvas id="canvas"></canvas>
-    <div id="tapeLine" title="Blue tape line"></div>
-
-    <div id="hud">
-      <div><b>Mode:</b> <span id="mode">LIVE</span></div>
-      <div><b>Time:</b> <span id="time">00:00.0</span></div>
-      <div><b>Frames:</b> <span id="frames">0</span></div>
-      <div><b>Turn:</b> <span id="turn">—</span></div>
-      <div><b>Cam:</b> <span id="cam">—</span></div>
-    </div>
+  <div class="menu">
+    <button class="primary" onclick="enableMotion()">Enable Motion</button>
+    <button class="game-btn" onclick="startGame('dot')">1. Center the Dot</button>
+    <button class="game-btn" onclick="startGame('target')">2. Lean to Targets</button>
+    <button class="game-btn" onclick="startGame('maze')">3. Sway Maze</button>
   </div>
 
-  <div class="row">
-    <button class="green" id="btnCam" onclick="startCamera()">Start Camera (Rear)</button>
-    <button class="blue" id="btnRec" onclick="startRecording()" disabled>Record</button>
-    <button class="gray" id="btnStop" onclick="stopRecording()" disabled>Stop</button>
+  <div id="status">Motion not enabled</div>
+  <div id="score">Score: 0</div>
+
+  <div id="gameArea">
+    <div id="circle"></div>
+    <div id="dot"></div>
+    <div id="target"></div>
+    <div id="mazeBox"></div>
+    <div id="ball"></div>
   </div>
 
-  <div class="row">
-    <button class="blue" id="btnJson" onclick="downloadJSON()" disabled>Download JSON</button>
-  </div>
+  <script>
+    let tiltX = 0;
+    let tiltY = 0;
+    let currentGame = null;
+    let score = 0;
+    let targetHitCooldown = false;
 
-  <div id="status">Status: <b>Start camera</b></div>
+    const dot = document.getElementById("dot");
+    const circle = document.getElementById("circle");
+    const target = document.getElementById("target");
+    const mazeBox = document.getElementById("mazeBox");
+    const ball = document.getElementById("ball");
+    const statusEl = document.getElementById("status");
+    const scoreEl = document.getElementById("score");
 
-<script>
-  // =========================
-  // ELEMENTS
-  // =========================
-  const video = document.getElementById('video');
-  const canvas = document.getElementById('canvas');
-  const ctx = canvas.getContext('2d');
-
-  const viewport = document.getElementById('viewport');
-  const tapeLine = document.getElementById('tapeLine');
-
-  const elMode = document.getElementById('mode');
-  const elTime = document.getElementById('time');
-  const elFrames = document.getElementById('frames');
-  const elTurn = document.getElementById('turn');
-  const elCam = document.getElementById('cam');
-  const elStatus = document.getElementById('status');
-
-  const btnRec = document.getElementById('btnRec');
-  const btnStop = document.getElementById('btnStop');
-  const btnJson = document.getElementById('btnJson');
-
-  // =========================
-  // STATE
-  // =========================
-  let detector = null;
-  let rafId = null;
-
-  let currentStream = null;
-
-  let recording = false;
-  let startT = null;
-  let frameCount = 0;
-
-  let keypointsLog = [];
-  let turnDetected = false;
-  let turnTimeMs = null;
-
-  // Keypoint name compatibility
-  const KP = {
-    leftAnkle: ['left_ankle', 'leftAnkle'],
-    rightAnkle: ['right_ankle', 'rightAnkle']
-  };
-
-  function setStatus(msg){
-    elStatus.innerHTML = `Status: <b>${msg}</b>`;
-  }
-
-  function fmtTime(ms){
-    const s = ms / 1000;
-    const m = Math.floor(s / 60);
-    const r = (s - m*60).toFixed(1).padStart(4,'0');
-    return `${String(m).padStart(2,'0')}:${r}`;
-  }
-
-  function pickKeypoint(pose, names){
-    for (const n of names){
-      const k = pose.keypoints.find(x => x.name === n);
-      if (k) return k;
-    }
-    return null;
-  }
-
-  // =========================
-  // CANVAS RESIZE (draw in CSS pixels)
-  // =========================
-  function resizeCanvasToViewport(){
-    const rect = viewport.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-
-    canvas.width  = Math.round(rect.width * dpr);
-    canvas.height = Math.round(rect.height * dpr);
-
-    // Draw using CSS pixel coords
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  }
-
-  // =========================
-  // OBJECT-FIT:COVER MAPPING
-  // (video pixel coords <-> viewport CSS coords)
-  // =========================
-  function getCoverMapping(){
-    const vw = video.videoWidth;
-    const vh = video.videoHeight;
-    if (!vw || !vh) return null;
-
-    const rect = viewport.getBoundingClientRect();
-    const cw = rect.width;
-    const ch = rect.height;
-
-    const scale = Math.max(cw / vw, ch / vh);
-    const dispW = vw * scale;
-    const dispH = vh * scale;
-
-    const offsetX = (dispW - cw) / 2;
-    const offsetY = (dispH - ch) / 2;
-
-    return { vw, vh, cw, ch, scale, offsetX, offsetY };
-  }
-
-  function v2c(xv, yv, map){
-    return {
-      x: xv * map.scale - map.offsetX,
-      y: yv * map.scale - map.offsetY
-    };
-  }
-
-  function c2v(xc, yc, map){
-    return {
-      x: (xc + map.offsetX) / map.scale,
-      y: (yc + map.offsetY) / map.scale
-    };
-  }
-
-  // =========================
-  // CAMERA: FORCE REAR
-  // =========================
-  async function stopStream(){
-    if (currentStream){
-      currentStream.getTracks().forEach(t => t.stop());
-      currentStream = null;
-    }
-    video.srcObject = null;
-  }
-
-  async function getRearCameraStream(){
-    // A) Hard force rear
-    try{
-      const s = await navigator.mediaDevices.getUserMedia({
-        audio:false,
-        video:{ facingMode: { exact: "environment" } }
-      });
-      elCam.textContent = "rear (exact)";
-      return s;
-    } catch(e){
-      // continue to fallback
+    function hideAllGames() {
+      circle.style.display = "none";
+      dot.style.display = "none";
+      target.style.display = "none";
+      mazeBox.style.display = "none";
+      ball.style.display = "none";
     }
 
-    // B) Soft preference rear
-    try{
-      const s = await navigator.mediaDevices.getUserMedia({
-        audio:false,
-        video:{ facingMode: { ideal: "environment" } }
-      });
-      elCam.textContent = "rear (ideal)";
-      return s;
-    } catch(e){
-      // continue to enumerate
+    function resetScore() {
+      score = 0;
+      scoreEl.textContent = "Score: " + score;
     }
 
-    // C) Enumerate and pick a likely rear camera by label/deviceId
-    // NOTE: labels may be empty until a permission grant.
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const cams = devices.filter(d => d.kind === "videoinput");
-    if (!cams.length) throw new Error("No cameras found");
+    function startGame(game) {
+      currentGame = game;
+      hideAllGames();
+      resetScore();
 
-    const rear = cams.find(d => /back|rear|environment/i.test(d.label));
-    const pick = rear || cams[cams.length - 1];
+      if (game === "dot") {
+        circle.style.display = "block";
+        dot.style.display = "block";
+        statusEl.textContent = "Game 1: Keep the red dot inside the circle";
+      }
 
-    const s = await navigator.mediaDevices.getUserMedia({
-      audio:false,
-      video:{ deviceId: { exact: pick.deviceId } }
-    });
-    elCam.textContent = rear ? "rear (deviceId)" : "picked (deviceId)";
-    return s;
-  }
+      if (game === "target") {
+        circle.style.display = "block";
+        dot.style.display = "block";
+        target.style.display = "block";
+        spawnTarget();
+        statusEl.textContent = "Game 2: Lean to move the red dot onto the blue target";
+      }
 
-  async function startCamera(){
-    setStatus("Starting camera…");
-
-    // stop old stream first (Safari will otherwise reuse last camera)
-    await stopStream();
-
-    // Get stream (forced rear)
-    let stream;
-    try{
-      stream = await getRearCameraStream();
-    } catch(err){
-      setStatus("Camera failed. Check permissions.");
-      console.error(err);
-      return;
-    }
-
-    currentStream = stream;
-    video.srcObject = stream;
-
-    // Wait for video dimensions
-    await new Promise(resolve => {
-      video.onloadedmetadata = () => resolve();
-    });
-
-    resizeCanvasToViewport();
-    window.addEventListener('resize', resizeCanvasToViewport);
-
-    setStatus("Loading MoveNet…");
-    const model = poseDetection.SupportedModels.MoveNet;
-    detector = await poseDetection.createDetector(model, {
-      modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING
-    });
-
-    setStatus("Ready. Press Record.");
-    btnRec.disabled = false;
-    elMode.textContent = "LIVE";
-
-    if (rafId) cancelAnimationFrame(rafId);
-    loop();
-  }
-
-  // =========================
-  // LOOP
-  // =========================
-  async function loop(){
-    rafId = requestAnimationFrame(loop);
-    if (!detector) return;
-
-    const poses = await detector.estimatePoses(video, { flipHorizontal:false });
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    const map = getCoverMapping();
-    if (!map) return;
-
-    if (poses && poses.length){
-      const pose = poses[0];
-      drawPose(pose, map);
-      if (recording) processPose(pose, map);
-    }
-
-    if (recording && startT != null){
-      const t = performance.now() - startT;
-      elTime.textContent = fmtTime(t);
-      elFrames.textContent = String(frameCount);
-    }
-  }
-
-  function drawPose(pose, map){
-    for (const k of pose.keypoints){
-      if (k.score != null && k.score < 0.35) continue;
-
-      const p = v2c(k.x, k.y, map);
-      if (p.x < -30 || p.x > map.cw + 30 || p.y < -30 || p.y > map.ch + 30) continue;
-
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-      ctx.fillStyle = "#2bff5a";
-      ctx.fill();
-    }
-  }
-
-  // =========================
-  // RECORDING + TURN DETECTION
-  // =========================
-  function startRecording(){
-    if (!detector) return;
-
-    recording = true;
-    startT = performance.now();
-    frameCount = 0;
-    keypointsLog = [];
-
-    turnDetected = false;
-    turnTimeMs = null;
-    elTurn.textContent = "—";
-
-    btnRec.disabled = true;
-    btnStop.disabled = false;
-    btnJson.disabled = true;
-
-    elMode.textContent = "REC";
-    elTime.textContent = "00:00.0";
-    elFrames.textContent = "0";
-
-    setStatus("Recording… Cross the blue tape.");
-  }
-
-  function stopRecording(){
-    recording = false;
-
-    btnRec.disabled = false;
-    btnStop.disabled = true;
-    btnJson.disabled = keypointsLog.length === 0;
-
-    elMode.textContent = "LIVE";
-    setStatus("Stopped. Download JSON if needed.");
-  }
-
-  function processPose(pose, map){
-    const t = performance.now() - startT;
-    frameCount += 1;
-
-    // Tape line Y in CSS pixels within viewport
-    const tapeRect = tapeLine.getBoundingClientRect();
-    const vpRect = viewport.getBoundingClientRect();
-    const tapeY_css = (tapeRect.top - vpRect.top) + (tapeRect.height / 2);
-
-    // Convert tape Y from CSS px -> video px
-    const tapeV = c2v(0, tapeY_css, map);
-    const tapeY_video = tapeV.y;
-
-    const la = pickKeypoint(pose, KP.leftAnkle);
-    const ra = pickKeypoint(pose, KP.rightAnkle);
-
-    // TURN RULE: first moment BOTH ankles are past tape (y > tapeY_video)
-    if (!turnDetected && la && ra && (la.score ?? 1) > 0.35 && (ra.score ?? 1) > 0.35){
-      const bothPast = (la.y > tapeY_video) && (ra.y > tapeY_video);
-      if (bothPast){
-        turnDetected = true;
-        turnTimeMs = t;
-        elTurn.textContent = fmtTime(turnTimeMs);
-        console.log("TURN DETECTED at ms:", Math.round(turnTimeMs));
+      if (game === "maze") {
+        mazeBox.style.display = "block";
+        ball.style.display = "block";
+        ball.style.left = "50px";
+        ball.style.top = "80px";
+        statusEl.textContent = "Game 3: Use body sway to move the green ball through the maze";
       }
     }
 
-    // Log in VIDEO PIXELS (not canvas pixels)
-    keypointsLog.push({
-      time_ms: t,
-      keypoints: pose.keypoints.map(k => ({
-        name: k.name,
-        x: k.x, y: k.y,
-        score: k.score
-      }))
-    });
-  }
+    function enableMotion() {
+      if (typeof DeviceMotionEvent !== "undefined" &&
+          typeof DeviceMotionEvent.requestPermission === "function") {
+        DeviceMotionEvent.requestPermission()
+          .then(permissionState => {
+            if (permissionState === "granted") {
+              window.addEventListener("devicemotion", handleMotion);
+              statusEl.textContent = "Motion enabled";
+            } else {
+              statusEl.textContent = "Motion permission denied";
+            }
+          })
+          .catch(() => {
+            statusEl.textContent = "Motion permission error";
+          });
+      } else {
+        window.addEventListener("devicemotion", handleMotion);
+        statusEl.textContent = "Motion enabled";
+      }
+    }
 
-  // =========================
-  // JSON DOWNLOAD (SESSION ONLY)
-  // =========================
-  function downloadJSON(){
-    const payload = {
-      meta: {
-        created_at: new Date().toISOString(),
-        camera: elCam.textContent,
-        videoWidth: video.videoWidth,
-        videoHeight: video.videoHeight
-      },
-      turn_time_ms: turnTimeMs,
-      frames: keypointsLog
-    };
+    function handleMotion(event) {
+      const ax = event.accelerationIncludingGravity?.x || 0;
+      const ay = event.accelerationIncludingGravity?.y || 0;
 
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
+      tiltX = ax;
+      tiltY = ay;
 
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "ANVA_TUG_keypoints.json";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+      updateGame();
+    }
 
-    URL.revokeObjectURL(url);
-  }
+    function updateGame() {
+      if (currentGame === "dot" || currentGame === "target") {
+        let x = 160 + tiltX * 12;
+        let y = 190 + tiltY * 12;
 
-  // Start in a known UI state
-  setStatus("Start camera");
-</script>
+        x = Math.max(50, Math.min(270, x));
+        y = Math.max(80, Math.min(300, y));
+
+        dot.style.left = x + "px";
+        dot.style.top = y + "px";
+
+        if (currentGame === "dot") {
+          const cx = 170;
+          const cy = 200;
+          const dx = x - cx;
+          const dy = y - cy;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist < 110) {
+            score += 1;
+            scoreEl.textContent = "Score: " + score;
+          }
+        }
+
+        if (currentGame === "target") {
+          checkTargetHit(x, y);
+        }
+      }
+
+      if (currentGame === "maze") {
+        let x = parseFloat(ball.style.left || "50");
+        let y = parseFloat(ball.style.top || "80");
+
+        x += tiltX * 1.5;
+        y += tiltY * 1.5;
+
+        x = Math.max(40, Math.min(280, x));
+        y = Math.max(70, Math.min(310, y));
+
+        ball.style.left = x + "px";
+        ball.style.top = y + "px";
+
+        if (x > 250 && y > 280) {
+          score = 100;
+          scoreEl.textContent = "Score: " + score + " - Maze complete";
+        }
+      }
+    }
+
+    function spawnTarget() {
+      const tx = 70 + Math.random() * 180;
+      const ty = 100 + Math.random() * 180;
+      target.style.left = tx + "px";
+      target.style.top = ty + "px";
+    }
+
+    function checkTargetHit(dotX, dotY) {
+      if (targetHitCooldown) return;
+
+      const tx = parseFloat(target.style.left) + 14;
+      const ty = parseFloat(target.style.top) + 14;
+      const dx = dotX - tx;
+      const dy = dotY - ty;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < 22) {
+        score += 10;
+        scoreEl.textContent = "Score: " + score;
+        targetHitCooldown = true;
+        spawnTarget();
+        setTimeout(() => {
+          targetHitCooldown = false;
+        }, 500);
+      }
+    }
+  </script>
 </body>
 </html>
