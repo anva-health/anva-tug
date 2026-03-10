@@ -1,251 +1,527 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ANVA Balance Trainer</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ANVA Compass Reach v1</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #111;
+      color: #fff;
+      text-align: center;
+    }
 
-<style>
+    h1 {
+      margin: 16px 0 8px;
+      font-size: 28px;
+    }
 
-body{
-font-family:Arial;
-text-align:center;
-background:#f5f6f7;
-}
+    p {
+      margin: 8px 16px;
+    }
 
-button{
-padding:12px 18px;
-margin:6px;
-font-size:16px;
-border-radius:10px;
-border:none;
-}
+    #controls {
+      margin: 12px 0;
+    }
 
-#arena{
-width:320px;
-height:320px;
-background:white;
-border:3px solid black;
-margin:auto;
-position:relative;
-}
+    button {
+      padding: 12px 18px;
+      font-size: 16px;
+      margin: 6px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
 
-#dot{
-width:18px;
-height:18px;
-background:red;
-border-radius:50%;
-position:absolute;
-left:150px;
-top:150px;
-}
+    #gameWrap {
+      width: 420px;
+      margin: 16px auto;
+      position: relative;
+    }
 
-#circle{
-width:200px;
-height:200px;
-border:4px solid black;
-border-radius:50%;
-position:absolute;
-left:60px;
-top:60px;
-}
+    #gameArea {
+      width: 400px;
+      height: 400px;
+      margin: auto;
+      background: #1c1c1c;
+      border: 3px solid #fff;
+      border-radius: 50%;
+      position: relative;
+      overflow: hidden;
+    }
 
-.target{
-width:26px;
-height:26px;
-background:blue;
-border-radius:50%;
-position:absolute;
-}
+    .target {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: #555;
+      position: absolute;
+      transform: translate(-50%, -50%);
+      border: 2px solid #999;
+    }
 
-.path{
-position:absolute;
-background:#ddd;
-}
+    .target.active {
+      background: gold;
+      border-color: #fff;
+      box-shadow: 0 0 12px gold;
+    }
 
-</style>
+    #centerRing {
+      width: 36px;
+      height: 36px;
+      border: 2px dashed #6cf;
+      border-radius: 50%;
+      position: absolute;
+      left: 182px;
+      top: 182px;
+      box-sizing: border-box;
+    }
+
+    #dot {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: red;
+      position: absolute;
+      left: 190px;
+      top: 190px;
+    }
+
+    #status, #liveData {
+      font-size: 16px;
+      margin-top: 8px;
+    }
+
+    #report {
+      width: 90%;
+      max-width: 700px;
+      margin: 24px auto;
+      background: #1a1a1a;
+      border: 1px solid #444;
+      border-radius: 10px;
+      padding: 16px;
+      text-align: left;
+      display: none;
+      white-space: pre-line;
+    }
+
+    #pathCanvas {
+      position: absolute;
+      left: 10px;
+      top: 10px;
+      pointer-events: none;
+    }
+
+    .small {
+      font-size: 14px;
+      color: #ccc;
+    }
+  </style>
 </head>
-
 <body>
-
-<h1>ANVA Balance Trainer</h1>
-
-<button onclick="enableMotion()">Enable Motion</button>
-
-<br><br>
-
-<button onclick="startStability()">1 Stability Hold</button>
-<button onclick="startTargets()">2 Direction Targets</button>
-<button onclick="startPath()">3 Path Follow</button>
-
-<h3 id="score">Score: 0</h3>
-
-<div id="arena">
-
-<div id="circle"></div>
-<div id="dot"></div>
-
-</div>
-
-<script>
-
-let tiltX=0
-let tiltY=0
-let game="none"
-let score=0
-
-let dot=document.getElementById("dot")
-
-function enableMotion(){
-
-if(typeof DeviceMotionEvent.requestPermission==="function"){
-
-DeviceMotionEvent.requestPermission().then(permission=>{
-
-if(permission==="granted"){
-window.addEventListener("devicemotion",handleMotion)
-}
-
-})
-
-}else{
-
-window.addEventListener("devicemotion",handleMotion)
-
-}
-
-}
-
-function handleMotion(e){
-
-tiltX=e.accelerationIncludingGravity.x
-tiltY=e.accelerationIncludingGravity.y
-
-update()
-
-}
-
-function update(){
-
-let x=150 + tiltX*12
-let y=150 + tiltY*12
-
-x=Math.max(0,Math.min(300,x))
-y=Math.max(0,Math.min(300,y))
-
-dot.style.left=x+"px"
-dot.style.top=y+"px"
-
-if(game==="stability"){
-
-let dx=x-150
-let dy=y-150
-
-let dist=Math.sqrt(dx*dx+dy*dy)
-
-if(dist<90){
-score++
-document.getElementById("score").innerText="Score: "+score
-}
-
-}
-
-if(game==="targets"){
-checkTargets(x,y)
-}
-
-if(game==="path"){
-checkPath(x,y)
-}
-
-}
-
-function startStability(){
-
-game="stability"
-score=0
-
-document.getElementById("arena").innerHTML='\
-<div id="circle"></div>\
-<div id="dot"></div>'
-
-dot=document.getElementById("dot")
-
-}
-
-let targetX
-let targetY
-
-function startTargets(){
-
-game="targets"
-score=0
-
-document.getElementById("arena").innerHTML='<div id="dot"></div>'
-
-dot=document.getElementById("dot")
-
-spawnTarget()
-
-}
-
-function spawnTarget(){
-
-targetX=Math.random()*260
-targetY=Math.random()*260
-
-let t=document.createElement("div")
-t.className="target"
-t.style.left=targetX+"px"
-t.style.top=targetY+"px"
-
-document.getElementById("arena").appendChild(t)
-
-}
-
-function checkTargets(x,y){
-
-let dx=x-targetX
-let dy=y-targetY
-
-if(Math.sqrt(dx*dx+dy*dy)<25){
-
-score+=10
-document.getElementById("score").innerText="Score: "+score
-
-document.querySelector(".target").remove()
-
-spawnTarget()
-
-}
-
-}
-
-function startPath(){
-
-game="path"
-score=0
-
-document.getElementById("arena").innerHTML='\
-<div id="dot"></div>\
-<div class="path" style="left:0;top:140;width:320px;height:40px"></div>'
-
-dot=document.getElementById("dot")
-
-}
-
-function checkPath(x,y){
-
-if(y>140 && y<180){
-score++
-}else{
-score--
-}
-
-document.getElementById("score").innerText="Score: "+score
-
-}
-
-</script>
-
+  <h1>ANVA Compass Reach v1</h1>
+  <p>Lean with your ankles to move the dot to the highlighted target, then return to center.</p>
+
+  <div id="controls">
+    <button id="motionBtn">Enable Motion</button>
+    <button id="calibrateBtn">Calibrate Neutral</button>
+    <button id="startBtn">Start Test</button>
+    <button id="resetBtn">Reset</button>
+  </div>
+
+  <p id="status">Status: waiting</p>
+  <p id="liveData">Pitch: 0 | Roll: 0</p>
+  <p class="small">Best on iPhone Safari. Phone in front pocket. Stand safely near support.</p>
+
+  <div id="gameWrap">
+    <div id="gameArea">
+      <canvas id="pathCanvas" width="400" height="400"></canvas>
+      <div id="centerRing"></div>
+      <div id="targetFront" class="target"></div>
+      <div id="targetRight" class="target"></div>
+      <div id="targetBack" class="target"></div>
+      <div id="targetLeft" class="target"></div>
+      <div id="dot"></div>
+    </div>
+  </div>
+
+  <div id="report"></div>
+
+  <script>
+    const dot = document.getElementById("dot");
+    const statusEl = document.getElementById("status");
+    const liveDataEl = document.getElementById("liveData");
+    const reportEl = document.getElementById("report");
+
+    const motionBtn = document.getElementById("motionBtn");
+    const calibrateBtn = document.getElementById("calibrateBtn");
+    const startBtn = document.getElementById("startBtn");
+    const resetBtn = document.getElementById("resetBtn");
+
+    const targetEls = {
+      front: document.getElementById("targetFront"),
+      right: document.getElementById("targetRight"),
+      back: document.getElementById("targetBack"),
+      left: document.getElementById("targetLeft")
+    };
+
+    const canvas = document.getElementById("pathCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const centerX = 200;
+    const centerY = 200;
+    const circleRadius = 110;
+    const targetTolerance = 26;
+    const centerTolerance = 18;
+
+    const scale = 4.5; // pixels per degree tilt
+    let neutralPitch = 0;
+    let neutralRoll = 0;
+    let currentPitch = 0;
+    let currentRoll = 0;
+
+    let dotX = centerX;
+    let dotY = centerY;
+
+    let phase = "idle"; // idle, goTarget, returnCenter, done
+    let currentTargetIndex = 0;
+    let targetOrder = ["front", "right", "back", "left"];
+    let activeTarget = null;
+    let holdStart = null;
+    let returnHoldStart = null;
+    let reachStartTime = null;
+    let returnStartTime = null;
+
+    let trialData = [];
+    let pathPoints = [];
+    let animationFrameId = null;
+
+    const targetPositions = {
+      front: { x: centerX, y: centerY - circleRadius },
+      right: { x: centerX + circleRadius, y: centerY },
+      back:  { x: centerX, y: centerY + circleRadius },
+      left:  { x: centerX - circleRadius, y: centerY }
+    };
+
+    function placeTargets() {
+      for (const key in targetPositions) {
+        targetEls[key].style.left = targetPositions[key].x + "px";
+        targetEls[key].style.top = targetPositions[key].y + "px";
+      }
+    }
+
+    placeTargets();
+
+    function clearActiveTargets() {
+      Object.values(targetEls).forEach(el => el.classList.remove("active"));
+    }
+
+    function setActiveTarget(name) {
+      clearActiveTargets();
+      if (targetEls[name]) {
+        targetEls[name].classList.add("active");
+      }
+    }
+
+    function distance(x1, y1, x2, y2) {
+      return Math.hypot(x2 - x1, y2 - y1);
+    }
+
+    function updateDotPosition() {
+      const dx = (currentRoll - neutralRoll) * scale;
+      const dy = (currentPitch - neutralPitch) * scale;
+
+      dotX = centerX + dx;
+      dotY = centerY + dy;
+
+      // Keep inside game bounds
+      dotX = Math.max(0, Math.min(380, dotX));
+      dotY = Math.max(0, Math.min(380, dotY));
+
+      dot.style.left = dotX + "px";
+      dot.style.top = dotY + "px";
+
+      liveDataEl.textContent =
+        `Pitch: ${currentPitch.toFixed(1)} | Roll: ${currentRoll.toFixed(1)} | X: ${dotX.toFixed(0)} | Y: ${dotY.toFixed(0)}`;
+    }
+
+    function drawPath() {
+      ctx.clearRect(0, 0, 400, 400);
+
+      if (pathPoints.length < 2) return;
+
+      ctx.beginPath();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#55d6ff";
+      ctx.moveTo(pathPoints[0].x, pathPoints[0].y);
+
+      for (let i = 1; i < pathPoints.length; i++) {
+        ctx.lineTo(pathPoints[i].x, pathPoints[i].y);
+      }
+      ctx.stroke();
+    }
+
+    function addPathPoint() {
+      pathPoints.push({ x: dotX + 10, y: dotY + 10 });
+      if (pathPoints.length > 1000) pathPoints.shift();
+    }
+
+    function calibrateNeutral() {
+      neutralPitch = currentPitch;
+      neutralRoll = currentRoll;
+      statusEl.textContent = `Status: calibrated | Neutral pitch ${neutralPitch.toFixed(1)} | Neutral roll ${neutralRoll.toFixed(1)}`;
+      updateDotPosition();
+    }
+
+    function shuffle(array) {
+      const arr = [...array];
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+
+    function startTest() {
+      reportEl.style.display = "none";
+      reportEl.textContent = "";
+      trialData = [];
+      pathPoints = [];
+      ctx.clearRect(0, 0, 400, 400);
+
+      targetOrder = shuffle(["front", "right", "back", "left"]);
+      currentTargetIndex = 0;
+      activeTarget = targetOrder[currentTargetIndex];
+      setActiveTarget(activeTarget);
+
+      phase = "goTarget";
+      holdStart = null;
+      returnHoldStart = null;
+      reachStartTime = performance.now();
+      returnStartTime = null;
+
+      statusEl.textContent = `Status: Move to ${activeTarget.toUpperCase()}`;
+    }
+
+    function resetGame() {
+      phase = "idle";
+      activeTarget = null;
+      currentTargetIndex = 0;
+      holdStart = null;
+      returnHoldStart = null;
+      reachStartTime = null;
+      returnStartTime = null;
+      trialData = [];
+      pathPoints = [];
+      clearActiveTargets();
+      ctx.clearRect(0, 0, 400, 400);
+      dotX = centerX;
+      dotY = centerY;
+      dot.style.left = "190px";
+      dot.style.top = "190px";
+      reportEl.style.display = "none";
+      reportEl.textContent = "";
+      statusEl.textContent = "Status: reset";
+    }
+
+    function completeTest() {
+      phase = "done";
+      clearActiveTargets();
+      statusEl.textContent = "Status: test complete";
+      generateReport();
+    }
+
+    function nextTarget() {
+      currentTargetIndex++;
+      if (currentTargetIndex >= targetOrder.length) {
+        completeTest();
+        return;
+      }
+      activeTarget = targetOrder[currentTargetIndex];
+      setActiveTarget(activeTarget);
+      holdStart = null;
+      returnHoldStart = null;
+      reachStartTime = performance.now();
+      returnStartTime = null;
+      phase = "goTarget";
+      statusEl.textContent = `Status: Move to ${activeTarget.toUpperCase()}`;
+    }
+
+    function updateGameLogic() {
+      if (phase === "idle" || phase === "done") return;
+
+      const now = performance.now();
+      const centerDist = distance(dotX + 10, dotY + 10, centerX, centerY);
+
+      if (phase === "goTarget") {
+        const target = targetPositions[activeTarget];
+        const targetDist = distance(dotX + 10, dotY + 10, target.x, target.y);
+
+        if (targetDist <= targetTolerance) {
+          if (!holdStart) {
+            holdStart = now;
+            statusEl.textContent = `Status: Hold at ${activeTarget.toUpperCase()}`;
+          } else if (now - holdStart >= 1000) {
+            const reachTimeSec = (now - reachStartTime) / 1000;
+            returnStartTime = performance.now();
+            phase = "returnCenter";
+
+            const record = {
+              direction: activeTarget,
+              reachTime: reachTimeSec,
+              returnTime: null,
+              success: true
+            };
+            trialData.push(record);
+
+            statusEl.textContent = "Status: Return to CENTER";
+          }
+        } else {
+          holdStart = null;
+        }
+      }
+
+      else if (phase === "returnCenter") {
+        if (centerDist <= centerTolerance) {
+          if (!returnHoldStart) {
+            returnHoldStart = now;
+          } else if (now - returnHoldStart >= 800) {
+            const returnTimeSec = (now - returnStartTime) / 1000;
+            const lastTrial = trialData[trialData.length - 1];
+            if (lastTrial) lastTrial.returnTime = returnTimeSec;
+            nextTarget();
+          }
+        } else {
+          returnHoldStart = null;
+        }
+      }
+    }
+
+    function average(nums) {
+      if (!nums.length) return 0;
+      return nums.reduce((a, b) => a + b, 0) / nums.length;
+    }
+
+    function generateReport() {
+      const completed = trialData.filter(t => t.success).length;
+      const attempted = 4;
+
+      const reachTimes = trialData.map(t => t.reachTime).filter(v => typeof v === "number");
+      const returnTimes = trialData.map(t => t.returnTime).filter(v => typeof v === "number");
+
+      const avgReach = average(reachTimes);
+      const avgReturn = average(returnTimes);
+
+      const dirMap = {};
+      for (const t of trialData) {
+        dirMap[t.direction] = t;
+      }
+
+      // Very simple scoring for v1
+      const completionScore = (completed / attempted) * 40;
+
+      let speedScore = 0;
+      if (avgReach > 0) {
+        // 2.0 sec or less is strong, 4+ sec weaker
+        speedScore = Math.max(0, Math.min(30, 30 - ((avgReach - 2.0) * 10)));
+      }
+
+      let returnScore = 0;
+      if (avgReturn > 0) {
+        // 1.5 sec or less strong, 3.5+ sec weaker
+        returnScore = Math.max(0, Math.min(20, 20 - ((avgReturn - 1.5) * 10)));
+      }
+
+      const consistencyPenalty =
+        Math.abs((dirMap.front?.reachTime || avgReach) - (dirMap.back?.reachTime || avgReach)) +
+        Math.abs((dirMap.left?.reachTime || avgReach) - (dirMap.right?.reachTime || avgReach));
+
+      const symmetryScore = Math.max(0, 10 - consistencyPenalty * 2.5);
+
+      const totalScore = Math.round(completionScore + speedScore + returnScore + symmetryScore);
+
+      let interpretation = "Good control";
+      if (totalScore < 60) interpretation = "High balance challenge / needs training";
+      else if (totalScore < 75) interpretation = "Moderate balance impairment";
+      else if (totalScore < 90) interpretation = "Mild balance impairment";
+
+      const reportText = `
+ANVA BALANCE REPORT
+Test: Compass Reach v1
+
+Targets Attempted: ${attempted}
+Targets Completed: ${completed}
+
+Average Time to Reach Target: ${avgReach ? avgReach.toFixed(2) : "-"} sec
+Average Time to Return to Center: ${avgReturn ? avgReturn.toFixed(2) : "-"} sec
+
+Directional Results
+Front  - Reach: ${dirMap.front?.reachTime ? dirMap.front.reachTime.toFixed(2) : "-"} sec | Return: ${dirMap.front?.returnTime ? dirMap.front.returnTime.toFixed(2) : "-"} sec
+Right  - Reach: ${dirMap.right?.reachTime ? dirMap.right.reachTime.toFixed(2) : "-"} sec | Return: ${dirMap.right?.returnTime ? dirMap.right.returnTime.toFixed(2) : "-"} sec
+Back   - Reach: ${dirMap.back?.reachTime ? dirMap.back.reachTime.toFixed(2) : "-"} sec | Return: ${dirMap.back?.returnTime ? dirMap.back.returnTime.toFixed(2) : "-"} sec
+Left   - Reach: ${dirMap.left?.reachTime ? dirMap.left.reachTime.toFixed(2) : "-"} sec | Return: ${dirMap.left?.returnTime ? dirMap.left.returnTime.toFixed(2) : "-"} sec
+
+Scores
+Completion Score: ${completionScore.toFixed(0)}/40
+Speed Score: ${speedScore.toFixed(0)}/30
+Return Control Score: ${returnScore.toFixed(0)}/20
+Symmetry Score: ${symmetryScore.toFixed(0)}/10
+
+Overall Balance Score: ${totalScore}/100
+
+Interpretation: ${interpretation}
+
+Clinical Notes
+- Slower posterior target usually suggests reduced backward confidence or control.
+- Left/right asymmetry may indicate uneven weight shift control.
+- Slower return to center may indicate impaired postural recentering.
+      `.trim();
+
+      reportEl.textContent = reportText;
+      reportEl.style.display = "block";
+    }
+
+    function loop() {
+      updateDotPosition();
+      addPathPoint();
+      drawPath();
+      updateGameLogic();
+      animationFrameId = requestAnimationFrame(loop);
+    }
+
+    function handleOrientation(event) {
+      if (typeof event.beta === "number") currentPitch = event.beta;
+      if (typeof event.gamma === "number") currentRoll = event.gamma;
+    }
+
+    motionBtn.addEventListener("click", async () => {
+      try {
+        if (typeof DeviceOrientationEvent !== "undefined" &&
+            typeof DeviceOrientationEvent.requestPermission === "function") {
+          const response = await DeviceOrientationEvent.requestPermission();
+          if (response === "granted") {
+            window.addEventListener("deviceorientation", handleOrientation);
+            statusEl.textContent = "Status: motion enabled";
+          } else {
+            statusEl.textContent = "Status: motion permission denied";
+          }
+        } else {
+          window.addEventListener("deviceorientation", handleOrientation);
+          statusEl.textContent = "Status: motion enabled";
+        }
+      } catch (err) {
+        statusEl.textContent = "Status: motion error";
+        console.error(err);
+      }
+    });
+
+    calibrateBtn.addEventListener("click", calibrateNeutral);
+    startBtn.addEventListener("click", startTest);
+    resetBtn.addEventListener("click", resetGame);
+
+    loop();
+  </script>
 </body>
 </html>
