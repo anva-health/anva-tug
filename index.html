@@ -3,537 +3,470 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ANVA Sway Steps v1</title>
+  <title>ANVA Balance Tetris</title>
   <style>
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: #111;
-      color: #fff;
-      text-align: center;
+    body{
+      margin:0;
+      font-family:Arial,sans-serif;
+      background:#101010;
+      color:#fff;
+      text-align:center;
     }
-
-    h1 {
-      margin: 16px 0 8px;
-      font-size: 28px;
+    h1{ margin:16px 0 8px; }
+    p{ margin:8px 16px; }
+    #controls, #modeBar{
+      margin:10px 0;
     }
-
-    p {
-      margin: 8px 16px;
+    button, select{
+      padding:10px 14px;
+      font-size:16px;
+      margin:5px;
+      border:none;
+      border-radius:10px;
     }
-
-    #controls, #comfortControls {
-      margin: 12px 0;
+    #wrap{
+      width:360px;
+      margin:16px auto;
+      background:#1a1a1a;
+      border:2px solid #444;
+      border-radius:12px;
+      padding:14px;
     }
-
-    button {
-      padding: 12px 18px;
-      font-size: 16px;
-      margin: 6px;
-      border: none;
-      border-radius: 10px;
-      cursor: pointer;
+    canvas{
+      background:#000;
+      border:2px solid #888;
+      border-radius:8px;
+      display:block;
+      margin:0 auto;
     }
-
-    #comfortControls {
-      display: none;
+    #status, #live, #scoreLine{
+      margin-top:10px;
+      font-size:16px;
     }
-
-    #gameWrap {
-      width: 420px;
-      margin: 16px auto;
-      position: relative;
+    #report{
+      width:90%;
+      max-width:760px;
+      margin:24px auto;
+      background:#1a1a1a;
+      border:1px solid #444;
+      border-radius:10px;
+      padding:16px;
+      text-align:left;
+      display:none;
+      white-space:pre-line;
     }
-
-    #gameArea {
-      width: 400px;
-      height: 400px;
-      margin: auto;
-      background: #1c1c1c;
-      border: 3px solid #fff;
-      border-radius: 50%;
-      position: relative;
-      overflow: hidden;
-    }
-
-    #centerRing {
-      width: 44px;
-      height: 44px;
-      border: 2px dashed #5cc8ff;
-      border-radius: 50%;
-      position: absolute;
-      left: 178px;
-      top: 178px;
-      box-sizing: border-box;
-    }
-
-    .target {
-      width: 22px;
-      height: 22px;
-      border-radius: 50%;
-      background: #555;
-      position: absolute;
-      transform: translate(-50%, -50%);
-      border: 2px solid #999;
-    }
-
-    .target.active {
-      background: gold;
-      border-color: #fff;
-      box-shadow: 0 0 12px gold;
-    }
-
-    #dot {
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
-      background: red;
-      position: absolute;
-      left: 191px;
-      top: 191px;
-    }
-
-    #status, #liveData, #roundInfo, #timerInfo {
-      font-size: 16px;
-      margin-top: 8px;
-    }
-
-    #report {
-      width: 90%;
-      max-width: 760px;
-      margin: 24px auto;
-      background: #1a1a1a;
-      border: 1px solid #444;
-      border-radius: 10px;
-      padding: 16px;
-      text-align: left;
-      display: none;
-      white-space: pre-line;
-    }
-
-    .small {
-      font-size: 14px;
-      color: #ccc;
-    }
-
-    #pathCanvas {
-      position: absolute;
-      left: 10px;
-      top: 10px;
-      pointer-events: none;
+    .small{
+      font-size:14px;
+      color:#ccc;
     }
   </style>
 </head>
 <body>
-  <h1>ANVA Sway Steps v1</h1>
-  <p>Tiny left-right ankle sway only. Move the dot between the two nearby targets.</p>
+  <h1>ANVA Balance Tetris</h1>
+  <p>Lean left or right to move the falling block. Slight forward lean can speed the drop.</p>
+
+  <div id="modeBar">
+    <label for="laneMode">Mode:</label>
+    <select id="laneMode">
+      <option value="2">2 Lanes</option>
+      <option value="3" selected>3 Lanes</option>
+    </select>
+  </div>
 
   <div id="controls">
     <button id="motionBtn">Enable Motion</button>
     <button id="calibrateBtn">Calibrate Neutral</button>
-    <button id="startBtn">Start Test</button>
+    <button id="startBtn">Start Game</button>
     <button id="finishBtn">Finish Test</button>
     <button id="resetBtn">Reset</button>
   </div>
 
-  <div id="comfortControls">
-    <button id="comfortableBtn">Comfortable</button>
-    <button id="sameBtn">Keep Same</button>
-    <button id="tooMuchBtn">Too Much</button>
-  </div>
-
-  <p id="status">Status: waiting</p>
-  <p id="roundInfo">Round: -</p>
-  <p id="timerInfo">Time: -</p>
-  <p id="liveData">Roll: 0 | X: 200</p>
-  <p class="small">Best on iPhone Safari. Phone in front pocket. Stand safely near support.</p>
-
-  <div id="gameWrap">
-    <div id="gameArea">
-      <canvas id="pathCanvas" width="400" height="400"></canvas>
-      <div id="centerRing"></div>
-      <div id="leftTarget" class="target"></div>
-      <div id="rightTarget" class="target"></div>
-      <div id="dot"></div>
-    </div>
+  <div id="wrap">
+    <canvas id="gameCanvas" width="240" height="400"></canvas>
+    <div id="status">Status: waiting</div>
+    <div id="scoreLine">Score: 0 | Placed: 0 | Missed: 0</div>
+    <div id="live">Pitch: 0 | Roll: 0 | Lane: -</div>
+    <div class="small">Keyboard fallback: Left / Right arrows to move, Down arrow for faster drop.</div>
   </div>
 
   <div id="report"></div>
 
   <script>
-    const dot = document.getElementById("dot");
-    const statusEl = document.getElementById("status");
-    const roundInfoEl = document.getElementById("roundInfo");
-    const timerInfoEl = document.getElementById("timerInfo");
-    const liveDataEl = document.getElementById("liveData");
-    const reportEl = document.getElementById("report");
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
 
     const motionBtn = document.getElementById("motionBtn");
     const calibrateBtn = document.getElementById("calibrateBtn");
     const startBtn = document.getElementById("startBtn");
     const finishBtn = document.getElementById("finishBtn");
     const resetBtn = document.getElementById("resetBtn");
+    const laneModeEl = document.getElementById("laneMode");
 
-    const comfortControls = document.getElementById("comfortControls");
-    const comfortableBtn = document.getElementById("comfortableBtn");
-    const sameBtn = document.getElementById("sameBtn");
-    const tooMuchBtn = document.getElementById("tooMuchBtn");
-
-    const leftTargetEl = document.getElementById("leftTarget");
-    const rightTargetEl = document.getElementById("rightTarget");
-
-    const canvas = document.getElementById("pathCanvas");
-    const ctx = canvas.getContext("2d");
-
-    const centerX = 200;
-    const centerY = 200;
-    const targetTolerance = 18;
+    const statusEl = document.getElementById("status");
+    const scoreLineEl = document.getElementById("scoreLine");
+    const liveEl = document.getElementById("live");
+    const reportEl = document.getElementById("report");
 
     let neutralRoll = 0;
+    let neutralPitch = 0;
     let currentRoll = 0;
+    let currentPitch = 0;
 
-    let dotX = centerX;
-    let dotY = centerY;
+    let laneCount = 3;
+    let laneWidth = canvas.width / laneCount;
+    const rowHeight = 28;
+    const rows = Math.floor(canvas.height / rowHeight);
 
-    let scale = 1.15; // small movement only
-    let currentSpacing = 14; // tiny initial spacing
-    const spacingStep = 6;
-    const minSpacing = 10;
-    const maxRounds = 5;
-    const roundDurationMs = 10000;
+    let board = [];
+    let currentBlock = null;
 
-    let roundNumber = 0;
-    let phase = "idle"; // idle, running, pausedForComfort, done
-    let activeTarget = "right";
-    let roundStartTime = null;
-    let currentRoundTimer = null;
+    let gameRunning = false;
+    let gameOver = false;
+    let animationId = null;
+    let lastDropTime = 0;
+    let dropInterval = 900;
+    let lastLaneChangeTime = 0;
+    let moveCooldown = 220;
 
-    let pathPoints = [];
+    let score = 0;
+    let placed = 0;
+    let missed = 0;
+    let clearedRows = 0;
+    let spawnCount = 0;
+    let leftMoves = 0;
+    let rightMoves = 0;
+    let fastDrops = 0;
+    let moveReactionSamples = [];
+    let spawnTime = 0;
+    let laneHistory = [];
+    let reportGenerated = false;
 
-    let roundStats = null;
-    let allRounds = [];
-
-    function distance(x1, y1, x2, y2) {
-      return Math.hypot(x2 - x1, y2 - y1);
-    }
-
-    function setTargets(spacing) {
-      leftTargetEl.style.left = (centerX - spacing) + "px";
-      leftTargetEl.style.top = centerY + "px";
-
-      rightTargetEl.style.left = (centerX + spacing) + "px";
-      rightTargetEl.style.top = centerY + "px";
-    }
-
-    function activateTarget(side) {
-      leftTargetEl.classList.remove("active");
-      rightTargetEl.classList.remove("active");
-      if (side === "left") leftTargetEl.classList.add("active");
-      if (side === "right") rightTargetEl.classList.add("active");
-      activeTarget = side;
-    }
-
-    function updateDotPosition() {
-      const dx = (currentRoll - neutralRoll) * scale;
-      dotX = centerX + dx;
-      dotY = centerY;
-
-      dotX = Math.max(20, Math.min(362, dotX));
-
-      dot.style.left = dotX + "px";
-      dot.style.top = dotY + "px";
-
-      liveDataEl.textContent = `Roll: ${currentRoll.toFixed(1)} | X: ${dotX.toFixed(0)} | Spacing: ${currentSpacing}px`;
-    }
-
-    function addPathPoint() {
-      pathPoints.push({ x: dotX + 9, y: dotY + 9 });
-      if (pathPoints.length > 600) pathPoints.shift();
-    }
-
-    function drawPath() {
-      ctx.clearRect(0, 0, 400, 400);
-      if (pathPoints.length < 2) return;
-
-      ctx.beginPath();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = "#55d6ff";
-      ctx.moveTo(pathPoints[0].x, pathPoints[0].y);
-
-      for (let i = 1; i < pathPoints.length; i++) {
-        ctx.lineTo(pathPoints[i].x, pathPoints[i].y);
+    function initBoard() {
+      laneCount = parseInt(laneModeEl.value, 10);
+      laneWidth = canvas.width / laneCount;
+      board = [];
+      for (let r = 0; r < rows; r++) {
+        board.push(new Array(laneCount).fill(0));
       }
-      ctx.stroke();
     }
 
-    function calibrateNeutral() {
-      neutralRoll = currentRoll;
-      statusEl.textContent = `Status: calibrated | Neutral roll ${neutralRoll.toFixed(1)}`;
-      updateDotPosition();
+    function drawBoard() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Grid
+      ctx.strokeStyle = "#333";
+      for (let c = 0; c <= laneCount; c++) {
+        ctx.beginPath();
+        ctx.moveTo(c * laneWidth, 0);
+        ctx.lineTo(c * laneWidth, canvas.height);
+        ctx.stroke();
+      }
+      for (let r = 0; r <= rows; r++) {
+        ctx.beginPath();
+        ctx.moveTo(0, r * rowHeight);
+        ctx.lineTo(canvas.width, r * rowHeight);
+        ctx.stroke();
+      }
+
+      // Settled blocks
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < laneCount; c++) {
+          if (board[r][c]) {
+            ctx.fillStyle = "#4fc3f7";
+            ctx.fillRect(c * laneWidth + 2, r * rowHeight + 2, laneWidth - 4, rowHeight - 4);
+          }
+        }
+      }
+
+      // Falling block
+      if (currentBlock) {
+        ctx.fillStyle = "#ff5252";
+        ctx.fillRect(
+          currentBlock.lane * laneWidth + 2,
+          currentBlock.y + 2,
+          laneWidth - 4,
+          rowHeight - 4
+        );
+      }
     }
 
-    function startRound() {
-      roundNumber += 1;
-      roundStartTime = performance.now();
-      pathPoints = [];
-      ctx.clearRect(0, 0, 400, 400);
+    function updateStatus() {
+      scoreLineEl.textContent = `Score: ${score} | Placed: ${placed} | Missed: ${missed} | Rows: ${clearedRows}`;
+      liveEl.textContent = `Pitch: ${currentPitch.toFixed(1)} | Roll: ${currentRoll.toFixed(1)} | Lane: ${currentBlock ? currentBlock.lane + 1 : "-"}`;
+    }
 
-      roundStats = {
-        round: roundNumber,
-        spacing: currentSpacing,
-        touchesLeft: 0,
-        touchesRight: 0,
-        successfulTransitions: 0,
-        transitionTimes: [],
-        lastHitTime: null,
-        lastHitSide: null,
-        comfortableResponse: null,
-        maxLeftDrift: 0,
-        maxRightDrift: 0,
-        timeInCenterZoneMs: 0,
-        lastFrameTime: performance.now()
+    function spawnBlock() {
+      const startLane = Math.floor(laneCount / 2);
+      currentBlock = {
+        lane: startLane,
+        y: 0
       };
+      spawnTime = performance.now();
+      spawnCount++;
+      laneHistory.push(startLane + 1);
 
-      setTargets(currentSpacing);
-      activateTarget("right");
-      phase = "running";
-      comfortControls.style.display = "none";
-
-      roundInfoEl.textContent = `Round: ${roundNumber}`;
-      timerInfoEl.textContent = `Time: 10.0 sec`;
-      statusEl.textContent = `Status: Round ${roundNumber} - move to RIGHT target`;
+      if (board[0][startLane] === 1) {
+        gameOver = true;
+        gameRunning = false;
+        statusEl.textContent = "Status: game over";
+        generateReport();
+      }
     }
 
-    function startTest() {
-      reportEl.style.display = "none";
-      reportEl.textContent = "";
-      allRounds = [];
-      roundNumber = 0;
-      currentSpacing = 14;
-      phase = "idle";
-      startRound();
+    function lockBlock() {
+      const row = Math.floor(currentBlock.y / rowHeight);
+      if (row >= 0 && row < rows) {
+        board[row][currentBlock.lane] = 1;
+        placed++;
+        score += 10;
+      } else {
+        missed++;
+      }
+
+      clearFullRows();
+      spawnBlock();
     }
 
-    function hitTarget(side) {
+    function clearFullRows() {
+      let rowsClearedThisTurn = 0;
+      for (let r = rows - 1; r >= 0; r--) {
+        const full = board[r].every(cell => cell === 1);
+        if (full) {
+          board.splice(r, 1);
+          board.unshift(new Array(laneCount).fill(0));
+          rowsClearedThisTurn++;
+          r++;
+        }
+      }
+      if (rowsClearedThisTurn > 0) {
+        clearedRows += rowsClearedThisTurn;
+        score += rowsClearedThisTurn * 50;
+      }
+    }
+
+    function canMoveToLane(newLane) {
+      return newLane >= 0 && newLane < laneCount;
+    }
+
+    function moveLane(dir) {
+      if (!currentBlock || !gameRunning) return;
+
       const now = performance.now();
+      if (now - lastLaneChangeTime < moveCooldown) return;
 
-      if (side === "left") {
-        roundStats.touchesLeft += 1;
-      } else {
-        roundStats.touchesRight += 1;
-      }
+      const newLane = currentBlock.lane + dir;
+      if (canMoveToLane(newLane)) {
+        currentBlock.lane = newLane;
+        lastLaneChangeTime = now;
 
-      if (roundStats.lastHitSide && roundStats.lastHitSide !== side && roundStats.lastHitTime) {
-        roundStats.successfulTransitions += 1;
-        roundStats.transitionTimes.push((now - roundStats.lastHitTime) / 1000);
-      }
+        const reaction = (now - spawnTime) / 1000;
+        moveReactionSamples.push(reaction);
 
-      roundStats.lastHitSide = side;
-      roundStats.lastHitTime = now;
-
-      if (side === "left") {
-        activateTarget("right");
-        statusEl.textContent = `Status: Good - now move to RIGHT`;
-      } else {
-        activateTarget("left");
-        statusEl.textContent = `Status: Good - now move to LEFT`;
+        if (dir < 0) leftMoves++;
+        if (dir > 0) rightMoves++;
       }
     }
 
-    function endRoundAndAskComfort() {
-      phase = "pausedForComfort";
-      comfortControls.style.display = "block";
-      leftTargetEl.classList.remove("active");
-      rightTargetEl.classList.remove("active");
-
-      statusEl.textContent = `Status: Round ${roundNumber} complete. Was that sway comfortable?`;
-
-      allRounds.push({ ...roundStats });
+    function speedDrop() {
+      if (!currentBlock || !gameRunning) return;
+      currentBlock.y += rowHeight * 0.35;
+      fastDrops++;
     }
 
-    function processComfortResponse(response) {
-      if (!allRounds.length) return;
+    function updateBlock(now) {
+      if (!currentBlock || !gameRunning) return;
 
-      allRounds[allRounds.length - 1].comfortableResponse = response;
+      const tiltRoll = currentRoll - neutralRoll;
+      const tiltPitch = currentPitch - neutralPitch;
 
-      if (response === "comfortable") {
-        currentSpacing += spacingStep;
-      } else if (response === "tooMuch") {
-        currentSpacing = Math.max(minSpacing, currentSpacing - 2);
+      if (tiltRoll < -7) {
+        moveLane(-1);
+      } else if (tiltRoll > 7) {
+        moveLane(1);
       }
 
-      if (roundNumber >= maxRounds || response === "tooMuch") {
-        finishTest();
+      let interval = dropInterval;
+      if (tiltPitch > 8) {
+        interval = 250;
+      }
+
+      if (now - lastDropTime >= interval) {
+        currentBlock.y += rowHeight;
+        lastDropTime = now;
+      }
+
+      const row = Math.floor(currentBlock.y / rowHeight);
+
+      if (row >= rows) {
+        currentBlock.y = (rows - 1) * rowHeight;
+        lockBlock();
         return;
       }
 
-      startRound();
+      if (row >= 0 && row < rows && board[row][currentBlock.lane] === 1) {
+        currentBlock.y = (row - 1) * rowHeight;
+        if (currentBlock.y < 0) {
+          gameOver = true;
+          gameRunning = false;
+          statusEl.textContent = "Status: game over";
+          generateReport();
+        } else {
+          lockBlock();
+        }
+      }
     }
 
-    function finishTest() {
-      phase = "done";
-      comfortControls.style.display = "none";
-      leftTargetEl.classList.remove("active");
-      rightTargetEl.classList.remove("active");
-      statusEl.textContent = "Status: test complete";
-      timerInfoEl.textContent = "Time: done";
-      generateReport();
-    }
-
-    function average(nums) {
-      if (!nums.length) return 0;
-      return nums.reduce((a, b) => a + b, 0) / nums.length;
+    function average(arr) {
+      if (!arr.length) return 0;
+      return arr.reduce((a, b) => a + b, 0) / arr.length;
     }
 
     function generateReport() {
-      if (!allRounds.length && roundStats && roundNumber > 0) {
-        allRounds.push({ ...roundStats, comfortableResponse: "not recorded" });
-      }
+      if (reportGenerated) return;
+      reportGenerated = true;
 
-      const roundsCompleted = allRounds.length;
-      const allTransitions = allRounds.flatMap(r => r.transitionTimes || []);
-      const avgTransition = average(allTransitions);
-
-      let totalTouches = 0;
-      let totalTransitions = 0;
-      let highestComfortableLevel = 0;
-      let recommendedLevel = 1;
-      let maxLeftDrift = 0;
-      let maxRightDrift = 0;
-      let comfortSummary = [];
-
-      allRounds.forEach((r, i) => {
-        totalTouches += (r.touchesLeft + r.touchesRight);
-        totalTransitions += r.successfulTransitions;
-        maxLeftDrift = Math.max(maxLeftDrift, r.maxLeftDrift || 0);
-        maxRightDrift = Math.max(maxRightDrift, r.maxRightDrift || 0);
-
-        if (r.comfortableResponse === "comfortable") {
-          highestComfortableLevel = i + 1;
-          recommendedLevel = i + 1;
-        }
-
-        comfortSummary.push(
-          `Round ${r.round}: spacing ${r.spacing}px | transitions ${r.successfulTransitions} | response: ${r.comfortableResponse || "not recorded"}`
-        );
-      });
-
-      if (highestComfortableLevel === 0 && roundsCompleted > 0) {
-        recommendedLevel = 1;
-      }
+      const avgReaction = average(moveReactionSamples);
+      const totalMoves = leftMoves + rightMoves;
+      const lateralSymmetry = totalMoves > 0
+        ? Math.abs(leftMoves - rightMoves) / totalMoves
+        : 0;
 
       let controlQuality = "Good";
-      if (avgTransition === 0 || totalTransitions < 4) controlQuality = "Limited";
-      else if (avgTransition > 1.6) controlQuality = "Fair";
-      else if (avgTransition > 1.1) controlQuality = "Good";
+      if (avgReaction === 0 || placed < 4) controlQuality = "Limited";
+      else if (avgReaction > 1.4) controlQuality = "Fair";
+      else if (avgReaction > 0.9) controlQuality = "Good";
       else controlQuality = "Very good";
 
-      let score = 50;
-
-      score += Math.min(20, totalTransitions * 2);
-      if (avgTransition > 0) {
-        score += Math.max(0, Math.min(20, 20 - ((avgTransition - 0.8) * 12)));
+      let scoreOutOf100 = 50;
+      scoreOutOf100 += Math.min(20, placed * 2);
+      scoreOutOf100 += Math.min(15, clearedRows * 5);
+      scoreOutOf100 += Math.max(0, 15 - missed * 4);
+      if (avgReaction > 0) {
+        scoreOutOf100 += Math.max(0, Math.min(10, 10 - ((avgReaction - 0.8) * 7)));
       }
-      score += Math.min(10, highestComfortableLevel * 2);
-      score = Math.max(0, Math.min(100, Math.round(score)));
+      scoreOutOf100 += Math.max(0, Math.min(10, 10 - lateralSymmetry * 20));
+      scoreOutOf100 = Math.max(0, Math.min(100, Math.round(scoreOutOf100)));
 
-      let interpretation = "Mild ankle sway control deficit";
-      if (score >= 85) interpretation = "Good ankle strategy control";
-      else if (score >= 70) interpretation = "Mild balance challenge";
-      else if (score >= 55) interpretation = "Moderate balance challenge";
-      else interpretation = "Marked balance challenge / train at low level";
+      let interpretation = "Moderate balance-cognitive challenge";
+      if (scoreOutOf100 >= 85) interpretation = "Good balance-control performance";
+      else if (scoreOutOf100 >= 70) interpretation = "Mild challenge";
+      else if (scoreOutOf100 >= 55) interpretation = "Moderate challenge";
+      else interpretation = "High challenge / start simpler";
 
       const reportText = `
-ANVA SWAY STEPS REPORT
-Test: Tiny Left-Right Ankle Sway
+ANVA BALANCE TETRIS REPORT
+Mode: ${laneCount} lanes
 
-Rounds Completed: ${roundsCompleted}
-Total Target Touches: ${totalTouches}
-Total Successful Left-Right Transitions: ${totalTransitions}
-Average Transition Time: ${avgTransition ? avgTransition.toFixed(2) : "-"} sec
+Blocks Spawned: ${spawnCount}
+Blocks Placed: ${placed}
+Blocks Missed: ${missed}
+Rows Cleared: ${clearedRows}
 
-Highest Comfortable Level: ${highestComfortableLevel || 0}
-Recommended Training Level: ${recommendedLevel}
+Left Moves: ${leftMoves}
+Right Moves: ${rightMoves}
+Fast Drops: ${fastDrops}
 
-Maximum Left Drift: ${maxLeftDrift.toFixed(1)} px
-Maximum Right Drift: ${maxRightDrift.toFixed(1)} px
+Average Move Reaction Time: ${avgReaction ? avgReaction.toFixed(2) : "-"} sec
+Lateral Symmetry Index: ${lateralSymmetry.toFixed(2)}
 
+Game Score: ${score}
+Clinical Score: ${scoreOutOf100}/100
 Control Quality: ${controlQuality}
-Overall Score: ${score}/100
 Interpretation: ${interpretation}
 
-Round-by-Round Summary
-${comfortSummary.join("\n")}
-
 Clinical Notes
-- This test reflects very small lateral sway tolerance around neutral.
-- Higher comfortable levels suggest better ankle-strategy control.
-- Slower transition times may reflect reduced confidence or delayed weight shift.
-- If the patient reports “too much” early, begin training at a smaller spacing.
+- 2-lane mode is better for early balance training.
+- 3-lane mode adds more motor planning and directional precision.
+- Slower reaction time may reflect delayed weight shift or cognitive load.
+- Large left-right imbalance may suggest asymmetrical control or preference.
+
+Recommendation
+${laneCount === 2
+  ? "Use 2-lane mode for beginners, then progress to 3 lanes."
+  : "If this felt manageable, keep 3 lanes. If accuracy was low, train in 2-lane mode first."}
       `.trim();
 
       reportEl.textContent = reportText;
       reportEl.style.display = "block";
     }
 
-    function updateMetricsPerFrame() {
-      if (phase !== "running" || !roundStats) return;
+    function gameLoop(now) {
+      updateBlock(now);
+      drawBoard();
+      updateStatus();
 
-      const now = performance.now();
-      const dt = now - roundStats.lastFrameTime;
-      roundStats.lastFrameTime = now;
-
-      const leftDrift = Math.max(0, centerX - (dotX + 9));
-      const rightDrift = Math.max(0, (dotX + 9) - centerX);
-
-      roundStats.maxLeftDrift = Math.max(roundStats.maxLeftDrift, leftDrift);
-      roundStats.maxRightDrift = Math.max(roundStats.maxRightDrift, rightDrift);
-
-      const centerDist = Math.abs((dotX + 9) - centerX);
-      if (centerDist <= 12) {
-        roundStats.timeInCenterZoneMs += dt;
+      if (gameRunning) {
+        animationId = requestAnimationFrame(gameLoop);
       }
     }
 
-    function updateGameLogic() {
-      if (phase !== "running") return;
+    function startGame() {
+      reportGenerated = false;
+      reportEl.style.display = "none";
+      reportEl.textContent = "";
 
-      const now = performance.now();
-      const elapsed = now - roundStartTime;
-      const remaining = Math.max(0, (roundDurationMs - elapsed) / 1000);
-      timerInfoEl.textContent = `Time: ${remaining.toFixed(1)} sec`;
+      score = 0;
+      placed = 0;
+      missed = 0;
+      clearedRows = 0;
+      spawnCount = 0;
+      leftMoves = 0;
+      rightMoves = 0;
+      fastDrops = 0;
+      moveReactionSamples = [];
+      laneHistory = [];
 
-      updateMetricsPerFrame();
+      initBoard();
+      gameOver = false;
+      gameRunning = true;
+      lastDropTime = performance.now();
 
-      const leftTargetX = centerX - currentSpacing;
-      const rightTargetX = centerX + currentSpacing;
-      const currentDotCenterX = dotX + 9;
-      const currentDotCenterY = dotY + 9;
+      spawnBlock();
+      statusEl.textContent = "Status: game running";
 
-      const leftDist = distance(currentDotCenterX, currentDotCenterY, leftTargetX, centerY);
-      const rightDist = distance(currentDotCenterX, currentDotCenterY, rightTargetX, centerY);
-
-      if (activeTarget === "left" && leftDist <= targetTolerance) {
-        hitTarget("left");
-      } else if (activeTarget === "right" && rightDist <= targetTolerance) {
-        hitTarget("right");
-      }
-
-      if (elapsed >= roundDurationMs) {
-        endRoundAndAskComfort();
-      }
+      if (animationId) cancelAnimationFrame(animationId);
+      animationId = requestAnimationFrame(gameLoop);
     }
 
-    function loop() {
-      updateDotPosition();
-      addPathPoint();
-      drawPath();
-      updateGameLogic();
-      requestAnimationFrame(loop);
+    function finishGame() {
+      gameRunning = false;
+      statusEl.textContent = "Status: test finished";
+      if (animationId) cancelAnimationFrame(animationId);
+      drawBoard();
+      generateReport();
+    }
+
+    function resetGame() {
+      gameRunning = false;
+      gameOver = false;
+      if (animationId) cancelAnimationFrame(animationId);
+
+      initBoard();
+      currentBlock = null;
+      score = 0;
+      placed = 0;
+      missed = 0;
+      clearedRows = 0;
+      spawnCount = 0;
+      leftMoves = 0;
+      rightMoves = 0;
+      fastDrops = 0;
+      moveReactionSamples = [];
+      laneHistory = [];
+      reportGenerated = false;
+
+      statusEl.textContent = "Status: reset";
+      scoreLineEl.textContent = "Score: 0 | Placed: 0 | Missed: 0";
+      liveEl.textContent = "Pitch: 0 | Roll: 0 | Lane: -";
+      reportEl.style.display = "none";
+      reportEl.textContent = "";
+
+      drawBoard();
     }
 
     function handleOrientation(event) {
       if (typeof event.gamma === "number") currentRoll = event.gamma;
+      if (typeof event.beta === "number") currentPitch = event.beta;
     }
 
     motionBtn.addEventListener("click", async () => {
@@ -557,39 +490,27 @@ Clinical Notes
       }
     });
 
-    calibrateBtn.addEventListener("click", calibrateNeutral);
-    startBtn.addEventListener("click", startTest);
-    finishBtn.addEventListener("click", finishTest);
-
-    resetBtn.addEventListener("click", () => {
-      phase = "idle";
-      roundNumber = 0;
-      currentSpacing = 14;
-      allRounds = [];
-      roundStats = null;
-      pathPoints = [];
-      ctx.clearRect(0, 0, 400, 400);
-      comfortControls.style.display = "none";
-      leftTargetEl.classList.remove("active");
-      rightTargetEl.classList.remove("active");
-      setTargets(currentSpacing);
-      dotX = centerX;
-      dotY = centerY;
-      dot.style.left = "191px";
-      dot.style.top = "191px";
-      reportEl.style.display = "none";
-      reportEl.textContent = "";
-      roundInfoEl.textContent = "Round: -";
-      timerInfoEl.textContent = "Time: -";
-      statusEl.textContent = "Status: reset";
+    calibrateBtn.addEventListener("click", () => {
+      neutralRoll = currentRoll;
+      neutralPitch = currentPitch;
+      statusEl.textContent = `Status: calibrated | roll ${neutralRoll.toFixed(1)} | pitch ${neutralPitch.toFixed(1)}`;
     });
 
-    comfortableBtn.addEventListener("click", () => processComfortResponse("comfortable"));
-    sameBtn.addEventListener("click", () => processComfortResponse("same"));
-    tooMuchBtn.addEventListener("click", () => processComfortResponse("tooMuch"));
+    startBtn.addEventListener("click", startGame);
+    finishBtn.addEventListener("click", finishGame);
+    resetBtn.addEventListener("click", resetGame);
 
-    setTargets(currentSpacing);
-    loop();
+    laneModeEl.addEventListener("change", resetGame);
+
+    window.addEventListener("keydown", (e) => {
+      if (!gameRunning) return;
+      if (e.key === "ArrowLeft") moveLane(-1);
+      if (e.key === "ArrowRight") moveLane(1);
+      if (e.key === "ArrowDown") speedDrop();
+    });
+
+    initBoard();
+    drawBoard();
   </script>
 </body>
 </html>
