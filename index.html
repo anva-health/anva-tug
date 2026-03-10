@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ANVA Compass Reach v1</title>
+  <title>ANVA Sway Steps v1</title>
   <style>
     body {
       margin: 0;
@@ -22,7 +22,7 @@
       margin: 8px 16px;
     }
 
-    #controls {
+    #controls, #comfortControls {
       margin: 12px 0;
     }
 
@@ -31,8 +31,12 @@
       font-size: 16px;
       margin: 6px;
       border: none;
-      border-radius: 8px;
+      border-radius: 10px;
       cursor: pointer;
+    }
+
+    #comfortControls {
+      display: none;
     }
 
     #gameWrap {
@@ -52,9 +56,20 @@
       overflow: hidden;
     }
 
+    #centerRing {
+      width: 44px;
+      height: 44px;
+      border: 2px dashed #5cc8ff;
+      border-radius: 50%;
+      position: absolute;
+      left: 178px;
+      top: 178px;
+      box-sizing: border-box;
+    }
+
     .target {
-      width: 26px;
-      height: 26px;
+      width: 22px;
+      height: 22px;
       border-radius: 50%;
       background: #555;
       position: absolute;
@@ -68,35 +83,24 @@
       box-shadow: 0 0 12px gold;
     }
 
-    #centerRing {
-      width: 36px;
-      height: 36px;
-      border: 2px dashed #6cf;
-      border-radius: 50%;
-      position: absolute;
-      left: 182px;
-      top: 182px;
-      box-sizing: border-box;
-    }
-
     #dot {
-      width: 20px;
-      height: 20px;
+      width: 18px;
+      height: 18px;
       border-radius: 50%;
       background: red;
       position: absolute;
-      left: 190px;
-      top: 190px;
+      left: 191px;
+      top: 191px;
     }
 
-    #status, #liveData {
+    #status, #liveData, #roundInfo, #timerInfo {
       font-size: 16px;
       margin-top: 8px;
     }
 
     #report {
       width: 90%;
-      max-width: 700px;
+      max-width: 760px;
       margin: 24px auto;
       background: #1a1a1a;
       border: 1px solid #444;
@@ -107,42 +111,49 @@
       white-space: pre-line;
     }
 
+    .small {
+      font-size: 14px;
+      color: #ccc;
+    }
+
     #pathCanvas {
       position: absolute;
       left: 10px;
       top: 10px;
       pointer-events: none;
     }
-
-    .small {
-      font-size: 14px;
-      color: #ccc;
-    }
   </style>
 </head>
 <body>
-  <h1>ANVA Compass Reach v1</h1>
-  <p>Lean with your ankles to move the dot to the highlighted target, then return to center.</p>
+  <h1>ANVA Sway Steps v1</h1>
+  <p>Tiny left-right ankle sway only. Move the dot between the two nearby targets.</p>
 
   <div id="controls">
     <button id="motionBtn">Enable Motion</button>
     <button id="calibrateBtn">Calibrate Neutral</button>
     <button id="startBtn">Start Test</button>
+    <button id="finishBtn">Finish Test</button>
     <button id="resetBtn">Reset</button>
   </div>
 
+  <div id="comfortControls">
+    <button id="comfortableBtn">Comfortable</button>
+    <button id="sameBtn">Keep Same</button>
+    <button id="tooMuchBtn">Too Much</button>
+  </div>
+
   <p id="status">Status: waiting</p>
-  <p id="liveData">Pitch: 0 | Roll: 0</p>
+  <p id="roundInfo">Round: -</p>
+  <p id="timerInfo">Time: -</p>
+  <p id="liveData">Roll: 0 | X: 200</p>
   <p class="small">Best on iPhone Safari. Phone in front pocket. Stand safely near support.</p>
 
   <div id="gameWrap">
     <div id="gameArea">
       <canvas id="pathCanvas" width="400" height="400"></canvas>
       <div id="centerRing"></div>
-      <div id="targetFront" class="target"></div>
-      <div id="targetRight" class="target"></div>
-      <div id="targetBack" class="target"></div>
-      <div id="targetLeft" class="target"></div>
+      <div id="leftTarget" class="target"></div>
+      <div id="rightTarget" class="target"></div>
       <div id="dot"></div>
     </div>
   </div>
@@ -152,104 +163,96 @@
   <script>
     const dot = document.getElementById("dot");
     const statusEl = document.getElementById("status");
+    const roundInfoEl = document.getElementById("roundInfo");
+    const timerInfoEl = document.getElementById("timerInfo");
     const liveDataEl = document.getElementById("liveData");
     const reportEl = document.getElementById("report");
 
     const motionBtn = document.getElementById("motionBtn");
     const calibrateBtn = document.getElementById("calibrateBtn");
     const startBtn = document.getElementById("startBtn");
+    const finishBtn = document.getElementById("finishBtn");
     const resetBtn = document.getElementById("resetBtn");
 
-    const targetEls = {
-      front: document.getElementById("targetFront"),
-      right: document.getElementById("targetRight"),
-      back: document.getElementById("targetBack"),
-      left: document.getElementById("targetLeft")
-    };
+    const comfortControls = document.getElementById("comfortControls");
+    const comfortableBtn = document.getElementById("comfortableBtn");
+    const sameBtn = document.getElementById("sameBtn");
+    const tooMuchBtn = document.getElementById("tooMuchBtn");
+
+    const leftTargetEl = document.getElementById("leftTarget");
+    const rightTargetEl = document.getElementById("rightTarget");
 
     const canvas = document.getElementById("pathCanvas");
     const ctx = canvas.getContext("2d");
 
     const centerX = 200;
     const centerY = 200;
-    const circleRadius = 110;
-    const targetTolerance = 26;
-    const centerTolerance = 18;
+    const targetTolerance = 18;
 
-    const scale = 4.5; // pixels per degree tilt
-    let neutralPitch = 0;
     let neutralRoll = 0;
-    let currentPitch = 0;
     let currentRoll = 0;
 
     let dotX = centerX;
     let dotY = centerY;
 
-    let phase = "idle"; // idle, goTarget, returnCenter, done
-    let currentTargetIndex = 0;
-    let targetOrder = ["front", "right", "back", "left"];
-    let activeTarget = null;
-    let holdStart = null;
-    let returnHoldStart = null;
-    let reachStartTime = null;
-    let returnStartTime = null;
+    let scale = 1.15; // small movement only
+    let currentSpacing = 14; // tiny initial spacing
+    const spacingStep = 6;
+    const minSpacing = 10;
+    const maxRounds = 5;
+    const roundDurationMs = 10000;
 
-    let trialData = [];
+    let roundNumber = 0;
+    let phase = "idle"; // idle, running, pausedForComfort, done
+    let activeTarget = "right";
+    let roundStartTime = null;
+    let currentRoundTimer = null;
+
     let pathPoints = [];
-    let animationFrameId = null;
 
-    const targetPositions = {
-      front: { x: centerX, y: centerY - circleRadius },
-      right: { x: centerX + circleRadius, y: centerY },
-      back:  { x: centerX, y: centerY + circleRadius },
-      left:  { x: centerX - circleRadius, y: centerY }
-    };
-
-    function placeTargets() {
-      for (const key in targetPositions) {
-        targetEls[key].style.left = targetPositions[key].x + "px";
-        targetEls[key].style.top = targetPositions[key].y + "px";
-      }
-    }
-
-    placeTargets();
-
-    function clearActiveTargets() {
-      Object.values(targetEls).forEach(el => el.classList.remove("active"));
-    }
-
-    function setActiveTarget(name) {
-      clearActiveTargets();
-      if (targetEls[name]) {
-        targetEls[name].classList.add("active");
-      }
-    }
+    let roundStats = null;
+    let allRounds = [];
 
     function distance(x1, y1, x2, y2) {
       return Math.hypot(x2 - x1, y2 - y1);
     }
 
+    function setTargets(spacing) {
+      leftTargetEl.style.left = (centerX - spacing) + "px";
+      leftTargetEl.style.top = centerY + "px";
+
+      rightTargetEl.style.left = (centerX + spacing) + "px";
+      rightTargetEl.style.top = centerY + "px";
+    }
+
+    function activateTarget(side) {
+      leftTargetEl.classList.remove("active");
+      rightTargetEl.classList.remove("active");
+      if (side === "left") leftTargetEl.classList.add("active");
+      if (side === "right") rightTargetEl.classList.add("active");
+      activeTarget = side;
+    }
+
     function updateDotPosition() {
       const dx = (currentRoll - neutralRoll) * scale;
-      const dy = (currentPitch - neutralPitch) * scale;
-
       dotX = centerX + dx;
-      dotY = centerY + dy;
+      dotY = centerY;
 
-      // Keep inside game bounds
-      dotX = Math.max(0, Math.min(380, dotX));
-      dotY = Math.max(0, Math.min(380, dotY));
+      dotX = Math.max(20, Math.min(362, dotX));
 
       dot.style.left = dotX + "px";
       dot.style.top = dotY + "px";
 
-      liveDataEl.textContent =
-        `Pitch: ${currentPitch.toFixed(1)} | Roll: ${currentRoll.toFixed(1)} | X: ${dotX.toFixed(0)} | Y: ${dotY.toFixed(0)}`;
+      liveDataEl.textContent = `Roll: ${currentRoll.toFixed(1)} | X: ${dotX.toFixed(0)} | Spacing: ${currentSpacing}px`;
+    }
+
+    function addPathPoint() {
+      pathPoints.push({ x: dotX + 9, y: dotY + 9 });
+      if (pathPoints.length > 600) pathPoints.shift();
     }
 
     function drawPath() {
       ctx.clearRect(0, 0, 400, 400);
-
       if (pathPoints.length < 2) return;
 
       ctx.beginPath();
@@ -263,140 +266,118 @@
       ctx.stroke();
     }
 
-    function addPathPoint() {
-      pathPoints.push({ x: dotX + 10, y: dotY + 10 });
-      if (pathPoints.length > 1000) pathPoints.shift();
-    }
-
     function calibrateNeutral() {
-      neutralPitch = currentPitch;
       neutralRoll = currentRoll;
-      statusEl.textContent = `Status: calibrated | Neutral pitch ${neutralPitch.toFixed(1)} | Neutral roll ${neutralRoll.toFixed(1)}`;
+      statusEl.textContent = `Status: calibrated | Neutral roll ${neutralRoll.toFixed(1)}`;
       updateDotPosition();
     }
 
-    function shuffle(array) {
-      const arr = [...array];
-      for (let i = arr.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [arr[i], arr[j]] = [arr[j], arr[i]];
-      }
-      return arr;
+    function startRound() {
+      roundNumber += 1;
+      roundStartTime = performance.now();
+      pathPoints = [];
+      ctx.clearRect(0, 0, 400, 400);
+
+      roundStats = {
+        round: roundNumber,
+        spacing: currentSpacing,
+        touchesLeft: 0,
+        touchesRight: 0,
+        successfulTransitions: 0,
+        transitionTimes: [],
+        lastHitTime: null,
+        lastHitSide: null,
+        comfortableResponse: null,
+        maxLeftDrift: 0,
+        maxRightDrift: 0,
+        timeInCenterZoneMs: 0,
+        lastFrameTime: performance.now()
+      };
+
+      setTargets(currentSpacing);
+      activateTarget("right");
+      phase = "running";
+      comfortControls.style.display = "none";
+
+      roundInfoEl.textContent = `Round: ${roundNumber}`;
+      timerInfoEl.textContent = `Time: 10.0 sec`;
+      statusEl.textContent = `Status: Round ${roundNumber} - move to RIGHT target`;
     }
 
     function startTest() {
       reportEl.style.display = "none";
       reportEl.textContent = "";
-      trialData = [];
-      pathPoints = [];
-      ctx.clearRect(0, 0, 400, 400);
-
-      targetOrder = shuffle(["front", "right", "back", "left"]);
-      currentTargetIndex = 0;
-      activeTarget = targetOrder[currentTargetIndex];
-      setActiveTarget(activeTarget);
-
-      phase = "goTarget";
-      holdStart = null;
-      returnHoldStart = null;
-      reachStartTime = performance.now();
-      returnStartTime = null;
-
-      statusEl.textContent = `Status: Move to ${activeTarget.toUpperCase()}`;
-    }
-
-    function resetGame() {
+      allRounds = [];
+      roundNumber = 0;
+      currentSpacing = 14;
       phase = "idle";
-      activeTarget = null;
-      currentTargetIndex = 0;
-      holdStart = null;
-      returnHoldStart = null;
-      reachStartTime = null;
-      returnStartTime = null;
-      trialData = [];
-      pathPoints = [];
-      clearActiveTargets();
-      ctx.clearRect(0, 0, 400, 400);
-      dotX = centerX;
-      dotY = centerY;
-      dot.style.left = "190px";
-      dot.style.top = "190px";
-      reportEl.style.display = "none";
-      reportEl.textContent = "";
-      statusEl.textContent = "Status: reset";
+      startRound();
     }
 
-    function completeTest() {
-      phase = "done";
-      clearActiveTargets();
-      statusEl.textContent = "Status: test complete";
-      generateReport();
+    function hitTarget(side) {
+      const now = performance.now();
+
+      if (side === "left") {
+        roundStats.touchesLeft += 1;
+      } else {
+        roundStats.touchesRight += 1;
+      }
+
+      if (roundStats.lastHitSide && roundStats.lastHitSide !== side && roundStats.lastHitTime) {
+        roundStats.successfulTransitions += 1;
+        roundStats.transitionTimes.push((now - roundStats.lastHitTime) / 1000);
+      }
+
+      roundStats.lastHitSide = side;
+      roundStats.lastHitTime = now;
+
+      if (side === "left") {
+        activateTarget("right");
+        statusEl.textContent = `Status: Good - now move to RIGHT`;
+      } else {
+        activateTarget("left");
+        statusEl.textContent = `Status: Good - now move to LEFT`;
+      }
     }
 
-    function nextTarget() {
-      currentTargetIndex++;
-      if (currentTargetIndex >= targetOrder.length) {
-        completeTest();
+    function endRoundAndAskComfort() {
+      phase = "pausedForComfort";
+      comfortControls.style.display = "block";
+      leftTargetEl.classList.remove("active");
+      rightTargetEl.classList.remove("active");
+
+      statusEl.textContent = `Status: Round ${roundNumber} complete. Was that sway comfortable?`;
+
+      allRounds.push({ ...roundStats });
+    }
+
+    function processComfortResponse(response) {
+      if (!allRounds.length) return;
+
+      allRounds[allRounds.length - 1].comfortableResponse = response;
+
+      if (response === "comfortable") {
+        currentSpacing += spacingStep;
+      } else if (response === "tooMuch") {
+        currentSpacing = Math.max(minSpacing, currentSpacing - 2);
+      }
+
+      if (roundNumber >= maxRounds || response === "tooMuch") {
+        finishTest();
         return;
       }
-      activeTarget = targetOrder[currentTargetIndex];
-      setActiveTarget(activeTarget);
-      holdStart = null;
-      returnHoldStart = null;
-      reachStartTime = performance.now();
-      returnStartTime = null;
-      phase = "goTarget";
-      statusEl.textContent = `Status: Move to ${activeTarget.toUpperCase()}`;
+
+      startRound();
     }
 
-    function updateGameLogic() {
-      if (phase === "idle" || phase === "done") return;
-
-      const now = performance.now();
-      const centerDist = distance(dotX + 10, dotY + 10, centerX, centerY);
-
-      if (phase === "goTarget") {
-        const target = targetPositions[activeTarget];
-        const targetDist = distance(dotX + 10, dotY + 10, target.x, target.y);
-
-        if (targetDist <= targetTolerance) {
-          if (!holdStart) {
-            holdStart = now;
-            statusEl.textContent = `Status: Hold at ${activeTarget.toUpperCase()}`;
-          } else if (now - holdStart >= 1000) {
-            const reachTimeSec = (now - reachStartTime) / 1000;
-            returnStartTime = performance.now();
-            phase = "returnCenter";
-
-            const record = {
-              direction: activeTarget,
-              reachTime: reachTimeSec,
-              returnTime: null,
-              success: true
-            };
-            trialData.push(record);
-
-            statusEl.textContent = "Status: Return to CENTER";
-          }
-        } else {
-          holdStart = null;
-        }
-      }
-
-      else if (phase === "returnCenter") {
-        if (centerDist <= centerTolerance) {
-          if (!returnHoldStart) {
-            returnHoldStart = now;
-          } else if (now - returnHoldStart >= 800) {
-            const returnTimeSec = (now - returnStartTime) / 1000;
-            const lastTrial = trialData[trialData.length - 1];
-            if (lastTrial) lastTrial.returnTime = returnTimeSec;
-            nextTarget();
-          }
-        } else {
-          returnHoldStart = null;
-        }
-      }
+    function finishTest() {
+      phase = "done";
+      comfortControls.style.display = "none";
+      leftTargetEl.classList.remove("active");
+      rightTargetEl.classList.remove("active");
+      statusEl.textContent = "Status: test complete";
+      timerInfoEl.textContent = "Time: done";
+      generateReport();
     }
 
     function average(nums) {
@@ -405,82 +386,142 @@
     }
 
     function generateReport() {
-      const completed = trialData.filter(t => t.success).length;
-      const attempted = 4;
-
-      const reachTimes = trialData.map(t => t.reachTime).filter(v => typeof v === "number");
-      const returnTimes = trialData.map(t => t.returnTime).filter(v => typeof v === "number");
-
-      const avgReach = average(reachTimes);
-      const avgReturn = average(returnTimes);
-
-      const dirMap = {};
-      for (const t of trialData) {
-        dirMap[t.direction] = t;
+      if (!allRounds.length && roundStats && roundNumber > 0) {
+        allRounds.push({ ...roundStats, comfortableResponse: "not recorded" });
       }
 
-      // Very simple scoring for v1
-      const completionScore = (completed / attempted) * 40;
+      const roundsCompleted = allRounds.length;
+      const allTransitions = allRounds.flatMap(r => r.transitionTimes || []);
+      const avgTransition = average(allTransitions);
 
-      let speedScore = 0;
-      if (avgReach > 0) {
-        // 2.0 sec or less is strong, 4+ sec weaker
-        speedScore = Math.max(0, Math.min(30, 30 - ((avgReach - 2.0) * 10)));
+      let totalTouches = 0;
+      let totalTransitions = 0;
+      let highestComfortableLevel = 0;
+      let recommendedLevel = 1;
+      let maxLeftDrift = 0;
+      let maxRightDrift = 0;
+      let comfortSummary = [];
+
+      allRounds.forEach((r, i) => {
+        totalTouches += (r.touchesLeft + r.touchesRight);
+        totalTransitions += r.successfulTransitions;
+        maxLeftDrift = Math.max(maxLeftDrift, r.maxLeftDrift || 0);
+        maxRightDrift = Math.max(maxRightDrift, r.maxRightDrift || 0);
+
+        if (r.comfortableResponse === "comfortable") {
+          highestComfortableLevel = i + 1;
+          recommendedLevel = i + 1;
+        }
+
+        comfortSummary.push(
+          `Round ${r.round}: spacing ${r.spacing}px | transitions ${r.successfulTransitions} | response: ${r.comfortableResponse || "not recorded"}`
+        );
+      });
+
+      if (highestComfortableLevel === 0 && roundsCompleted > 0) {
+        recommendedLevel = 1;
       }
 
-      let returnScore = 0;
-      if (avgReturn > 0) {
-        // 1.5 sec or less strong, 3.5+ sec weaker
-        returnScore = Math.max(0, Math.min(20, 20 - ((avgReturn - 1.5) * 10)));
+      let controlQuality = "Good";
+      if (avgTransition === 0 || totalTransitions < 4) controlQuality = "Limited";
+      else if (avgTransition > 1.6) controlQuality = "Fair";
+      else if (avgTransition > 1.1) controlQuality = "Good";
+      else controlQuality = "Very good";
+
+      let score = 50;
+
+      score += Math.min(20, totalTransitions * 2);
+      if (avgTransition > 0) {
+        score += Math.max(0, Math.min(20, 20 - ((avgTransition - 0.8) * 12)));
       }
+      score += Math.min(10, highestComfortableLevel * 2);
+      score = Math.max(0, Math.min(100, Math.round(score)));
 
-      const consistencyPenalty =
-        Math.abs((dirMap.front?.reachTime || avgReach) - (dirMap.back?.reachTime || avgReach)) +
-        Math.abs((dirMap.left?.reachTime || avgReach) - (dirMap.right?.reachTime || avgReach));
-
-      const symmetryScore = Math.max(0, 10 - consistencyPenalty * 2.5);
-
-      const totalScore = Math.round(completionScore + speedScore + returnScore + symmetryScore);
-
-      let interpretation = "Good control";
-      if (totalScore < 60) interpretation = "High balance challenge / needs training";
-      else if (totalScore < 75) interpretation = "Moderate balance impairment";
-      else if (totalScore < 90) interpretation = "Mild balance impairment";
+      let interpretation = "Mild ankle sway control deficit";
+      if (score >= 85) interpretation = "Good ankle strategy control";
+      else if (score >= 70) interpretation = "Mild balance challenge";
+      else if (score >= 55) interpretation = "Moderate balance challenge";
+      else interpretation = "Marked balance challenge / train at low level";
 
       const reportText = `
-ANVA BALANCE REPORT
-Test: Compass Reach v1
+ANVA SWAY STEPS REPORT
+Test: Tiny Left-Right Ankle Sway
 
-Targets Attempted: ${attempted}
-Targets Completed: ${completed}
+Rounds Completed: ${roundsCompleted}
+Total Target Touches: ${totalTouches}
+Total Successful Left-Right Transitions: ${totalTransitions}
+Average Transition Time: ${avgTransition ? avgTransition.toFixed(2) : "-"} sec
 
-Average Time to Reach Target: ${avgReach ? avgReach.toFixed(2) : "-"} sec
-Average Time to Return to Center: ${avgReturn ? avgReturn.toFixed(2) : "-"} sec
+Highest Comfortable Level: ${highestComfortableLevel || 0}
+Recommended Training Level: ${recommendedLevel}
 
-Directional Results
-Front  - Reach: ${dirMap.front?.reachTime ? dirMap.front.reachTime.toFixed(2) : "-"} sec | Return: ${dirMap.front?.returnTime ? dirMap.front.returnTime.toFixed(2) : "-"} sec
-Right  - Reach: ${dirMap.right?.reachTime ? dirMap.right.reachTime.toFixed(2) : "-"} sec | Return: ${dirMap.right?.returnTime ? dirMap.right.returnTime.toFixed(2) : "-"} sec
-Back   - Reach: ${dirMap.back?.reachTime ? dirMap.back.reachTime.toFixed(2) : "-"} sec | Return: ${dirMap.back?.returnTime ? dirMap.back.returnTime.toFixed(2) : "-"} sec
-Left   - Reach: ${dirMap.left?.reachTime ? dirMap.left.reachTime.toFixed(2) : "-"} sec | Return: ${dirMap.left?.returnTime ? dirMap.left.returnTime.toFixed(2) : "-"} sec
+Maximum Left Drift: ${maxLeftDrift.toFixed(1)} px
+Maximum Right Drift: ${maxRightDrift.toFixed(1)} px
 
-Scores
-Completion Score: ${completionScore.toFixed(0)}/40
-Speed Score: ${speedScore.toFixed(0)}/30
-Return Control Score: ${returnScore.toFixed(0)}/20
-Symmetry Score: ${symmetryScore.toFixed(0)}/10
-
-Overall Balance Score: ${totalScore}/100
-
+Control Quality: ${controlQuality}
+Overall Score: ${score}/100
 Interpretation: ${interpretation}
 
+Round-by-Round Summary
+${comfortSummary.join("\n")}
+
 Clinical Notes
-- Slower posterior target usually suggests reduced backward confidence or control.
-- Left/right asymmetry may indicate uneven weight shift control.
-- Slower return to center may indicate impaired postural recentering.
+- This test reflects very small lateral sway tolerance around neutral.
+- Higher comfortable levels suggest better ankle-strategy control.
+- Slower transition times may reflect reduced confidence or delayed weight shift.
+- If the patient reports “too much” early, begin training at a smaller spacing.
       `.trim();
 
       reportEl.textContent = reportText;
       reportEl.style.display = "block";
+    }
+
+    function updateMetricsPerFrame() {
+      if (phase !== "running" || !roundStats) return;
+
+      const now = performance.now();
+      const dt = now - roundStats.lastFrameTime;
+      roundStats.lastFrameTime = now;
+
+      const leftDrift = Math.max(0, centerX - (dotX + 9));
+      const rightDrift = Math.max(0, (dotX + 9) - centerX);
+
+      roundStats.maxLeftDrift = Math.max(roundStats.maxLeftDrift, leftDrift);
+      roundStats.maxRightDrift = Math.max(roundStats.maxRightDrift, rightDrift);
+
+      const centerDist = Math.abs((dotX + 9) - centerX);
+      if (centerDist <= 12) {
+        roundStats.timeInCenterZoneMs += dt;
+      }
+    }
+
+    function updateGameLogic() {
+      if (phase !== "running") return;
+
+      const now = performance.now();
+      const elapsed = now - roundStartTime;
+      const remaining = Math.max(0, (roundDurationMs - elapsed) / 1000);
+      timerInfoEl.textContent = `Time: ${remaining.toFixed(1)} sec`;
+
+      updateMetricsPerFrame();
+
+      const leftTargetX = centerX - currentSpacing;
+      const rightTargetX = centerX + currentSpacing;
+      const currentDotCenterX = dotX + 9;
+      const currentDotCenterY = dotY + 9;
+
+      const leftDist = distance(currentDotCenterX, currentDotCenterY, leftTargetX, centerY);
+      const rightDist = distance(currentDotCenterX, currentDotCenterY, rightTargetX, centerY);
+
+      if (activeTarget === "left" && leftDist <= targetTolerance) {
+        hitTarget("left");
+      } else if (activeTarget === "right" && rightDist <= targetTolerance) {
+        hitTarget("right");
+      }
+
+      if (elapsed >= roundDurationMs) {
+        endRoundAndAskComfort();
+      }
     }
 
     function loop() {
@@ -488,11 +529,10 @@ Clinical Notes
       addPathPoint();
       drawPath();
       updateGameLogic();
-      animationFrameId = requestAnimationFrame(loop);
+      requestAnimationFrame(loop);
     }
 
     function handleOrientation(event) {
-      if (typeof event.beta === "number") currentPitch = event.beta;
       if (typeof event.gamma === "number") currentRoll = event.gamma;
     }
 
@@ -519,8 +559,36 @@ Clinical Notes
 
     calibrateBtn.addEventListener("click", calibrateNeutral);
     startBtn.addEventListener("click", startTest);
-    resetBtn.addEventListener("click", resetGame);
+    finishBtn.addEventListener("click", finishTest);
 
+    resetBtn.addEventListener("click", () => {
+      phase = "idle";
+      roundNumber = 0;
+      currentSpacing = 14;
+      allRounds = [];
+      roundStats = null;
+      pathPoints = [];
+      ctx.clearRect(0, 0, 400, 400);
+      comfortControls.style.display = "none";
+      leftTargetEl.classList.remove("active");
+      rightTargetEl.classList.remove("active");
+      setTargets(currentSpacing);
+      dotX = centerX;
+      dotY = centerY;
+      dot.style.left = "191px";
+      dot.style.top = "191px";
+      reportEl.style.display = "none";
+      reportEl.textContent = "";
+      roundInfoEl.textContent = "Round: -";
+      timerInfoEl.textContent = "Time: -";
+      statusEl.textContent = "Status: reset";
+    });
+
+    comfortableBtn.addEventListener("click", () => processComfortResponse("comfortable"));
+    sameBtn.addEventListener("click", () => processComfortResponse("same"));
+    tooMuchBtn.addEventListener("click", () => processComfortResponse("tooMuch"));
+
+    setTargets(currentSpacing);
     loop();
   </script>
 </body>
